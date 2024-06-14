@@ -1,0 +1,5 @@
+# Simple HTTP Request
+GET http://httpbin.org/status/200
+Host: httpbin.org
+User-Agent: monica/0.1.0
+
