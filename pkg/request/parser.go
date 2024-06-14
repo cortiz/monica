@@ -61,7 +61,7 @@ func parseRequestHeader(line string, r *Request) {
 func parseRequestLine(requestLine string, r *Request) {
 	log.Default().Println("Parsing request line")
 	parts := strings.Split(requestLine, " ")
-	if len(parts) == 3 {
+	if len(parts) >= 2 {
 		r.Method = parts[0]
 		r.URL = parts[1]
 	}
