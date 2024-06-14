@@ -53,16 +53,16 @@ func ParseMonFile(file string) *Request {
 
 func parseRequestHeader(line string, r *Request) {
 	parts := strings.Split(line, ": ")
-	if len(parts) != 2 {
+	if len(parts) == 2 {
+		r.Headers[parts[0]] = parts[1]
 	}
-	r.Headers[parts[0]] = parts[1]
 }
 
 func parseRequestLine(requestLine string, r *Request) {
 	log.Default().Println("Parsing request line")
 	parts := strings.Split(requestLine, " ")
-	if len(parts) != 3 {
+	if len(parts) == 3 {
+		r.Method = parts[0]
+		r.URL = parts[1]
 	}
-	r.Method = parts[0]
-	r.URL = parts[1]
 }
