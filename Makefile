@@ -29,7 +29,7 @@ run:
 # Tests the project.
 .PHONY: test
 test: generate
-	$(GOTEST) -v ./...
+	$(GOTEST) -v ./... -cover
 
 # Cleans the project.
 .PHONY: clean
