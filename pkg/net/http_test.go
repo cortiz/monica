@@ -10,7 +10,7 @@ import (
 func TestHTTPRequest(t *testing.T) {
 	request := &request.Request{
 		Method: "GET",
-		URL:    "http://httpbin.com/status/200",
+		URL:    "https://httpbin.org/status/200",
 		Headers: map[string]string{
 			"Content-Type": "application/json",
 		},
