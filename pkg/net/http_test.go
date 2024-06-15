@@ -8,7 +8,7 @@ import (
 )
 
 func TestHTTPRequest(t *testing.T) {
-	request := &request.Request{
+	req := &request.Request{
 		Method: "GET",
 		URL:    "https://httpbin.org/status/200",
 		Headers: map[string]string{
@@ -16,7 +16,7 @@ func TestHTTPRequest(t *testing.T) {
 		},
 		Body: "",
 	}
-	res := net.HTTPRequest(request)
+	res := net.HTTPRequest(req, false)
 	if res.StatusCode != 200 {
 		t.Fatalf("Expected status code 200, got %d", res.StatusCode)
 	}

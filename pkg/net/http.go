@@ -1,6 +1,7 @@
 package net
 
 import (
+	"io"
 	"net/http"
 	"strings"
 
@@ -8,7 +9,7 @@ import (
 	"jmpeax.com/sec/monica/pkg/request"
 )
 
-func HTTPRequest(request *request.Request) *HTTPResponse {
+func HTTPRequest(request *request.Request, headerOnly bool) *HTTPResponse {
 	req, err := http.NewRequest(request.Method, request.URL, strings.NewReader(request.Body))
 	if err != nil {
 		logging.Log.Error().Err(err).Msg("Failed to create HTTP request")
@@ -22,13 +23,27 @@ func HTTPRequest(request *request.Request) *HTTPResponse {
 	if err != nil {
 		logging.Log.Error().Err(err).Msg("Failed to send HTTP request")
 	}
-	return parseHTTPResponse(resp)
+	return parseHTTPResponse(resp, headerOnly)
 }
 
-func parseHTTPResponse(resp *http.Response) *HTTPResponse {
+func parseHTTPResponse(resp *http.Response, headerOnly bool) *HTTPResponse {
 	response := &HTTPResponse{
+		Status:     resp.Proto + " " + resp.Status,
 		StatusCode: resp.StatusCode,
 		Headers:    parseResponseHeaders(resp.Header),
+	}
+	if !headerOnly {
+		defer func(Body io.ReadCloser) {
+			err := Body.Close()
+			if err != nil {
+				logging.Log.Error().Err(err).Msg("Failed to close response body")
+			}
+		}(resp.Body)
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			logging.Log.Error().Err(err).Msg("Failed to read response body")
+		}
+		response.Body = string(bodyBytes)
 	}
 	return response
 }
