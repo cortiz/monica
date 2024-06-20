@@ -13,7 +13,10 @@ var (
 		Long:    `Monica is a CLI tool to manage Network Requests like http, grpc, etc.`,
 		Version: "0.1.0",
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
+			err := cmd.Help()
+			if err != nil {
+				panic(err)
+			}
 		},
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			if debug {
