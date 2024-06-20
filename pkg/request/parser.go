@@ -2,16 +2,16 @@ package request
 
 import (
 	"bufio"
-	"jmpeax.com/sec/monica/internal/logging"
-	"log"
 	"os"
 	"strings"
+
+	"jmpeax.com/sec/monica/internal/logging"
 )
 
 // ParseRequest parses a raw HTTP request and returns a Request object.
 func ParseRequest(raw string) *Request {
 	logging.Log.Debug().Msg("Parsing request")
-	var request = Request{}
+	request := Request{}
 	scanner := bufio.NewScanner(strings.NewReader(raw))
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -59,7 +59,6 @@ func parseRequestHeader(line string, r *Request) {
 }
 
 func parseRequestLine(requestLine string, r *Request) {
-	log.Default().Println("Parsing request line")
 	parts := strings.Split(requestLine, " ")
 	if len(parts) >= 2 {
 		r.Method = parts[0]

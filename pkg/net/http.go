@@ -9,10 +9,11 @@ import (
 	"jmpeax.com/sec/monica/pkg/request"
 )
 
-func HTTPRequest(request *request.Request, headerOnly bool) *HTTPResponse {
+func HTTPRequest(request *request.Request, headerOnly bool) (*HTTPResponse, error) {
 	req, err := http.NewRequest(request.Method, request.URL, strings.NewReader(request.Body))
 	if err != nil {
 		logging.Log.Error().Err(err).Msg("Failed to create HTTP request")
+		return nil, err
 	}
 	for k, v := range request.Headers {
 		req.Header.Add(k, v)
@@ -22,11 +23,12 @@ func HTTPRequest(request *request.Request, headerOnly bool) *HTTPResponse {
 	resp, err := client.Do(req)
 	if err != nil {
 		logging.Log.Error().Err(err).Msg("Failed to send HTTP request")
+		return nil, err
 	}
 	return parseHTTPResponse(resp, headerOnly)
 }
 
-func parseHTTPResponse(resp *http.Response, headerOnly bool) *HTTPResponse {
+func parseHTTPResponse(resp *http.Response, headerOnly bool) (*HTTPResponse, error) {
 	response := &HTTPResponse{
 		Status:     resp.Proto + " " + resp.Status,
 		StatusCode: resp.StatusCode,
@@ -42,10 +44,11 @@ func parseHTTPResponse(resp *http.Response, headerOnly bool) *HTTPResponse {
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			logging.Log.Error().Err(err).Msg("Failed to read response body")
+			return nil, err
 		}
 		response.Body = string(bodyBytes)
 	}
-	return response
+	return response, nil
 }
 
 func parseResponseHeaders(headers http.Header) map[string]string {
