@@ -1,0 +1,8 @@
+# Simple POST HTTP Request
+GET http://httpbin.org/anything
+Host: httpbin.org
+User-Agent: monica/0.1.0
+
+{
+  "key": "value"
+}
