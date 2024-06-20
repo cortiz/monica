@@ -16,7 +16,10 @@ func TestHTTPRequest(t *testing.T) {
 		},
 		Body: "",
 	}
-	res := net.HTTPRequest(req, false)
+	res, err := net.HTTPRequest(req, false)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if res.StatusCode != 200 {
 		t.Fatalf("Expected status code 200, got %d", res.StatusCode)
 	}
