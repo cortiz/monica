@@ -207,3 +207,21 @@ func TestScriptTimeoutFromConfig(t *testing.T) {
 		t.Fatalf("request must not be sent, server saw %v", *seen)
 	}
 }
+
+// Files under different monica.yml projects use different script engines
+// but still share the run's vars.
+func TestVarsSharedAcrossProjects(t *testing.T) {
+	srv, seen := apiServer(t)
+	dir := t.TempDir()
+	write(t, dir, "auth/monica.yml", "version: 1\n")
+	write(t, dir, "api/monica.yml", "version: 1\n")
+	login := write(t, dir, "auth/login.mon", "POST "+srv.URL+"/login\n> {% vars.set(\"token\", res.json().token) %}\n")
+	me := write(t, dir, "api/me.mon", "GET "+srv.URL+"/me\nAuthorization: Bearer {{token}}\n> {% test(\"ok\", () => expect(res.status).toBe(200)) %}\n")
+
+	r := runner.New(&runner.Opts{}, &bytes.Buffer{})
+	for _, f := range []string{login, me} {
+		if err := r.RunFile(f); err != nil {
+			t.Fatalf("%s: %v (server saw %v)", f, err, *seen)
+		}
+	}
+}
