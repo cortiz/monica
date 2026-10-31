@@ -27,6 +27,7 @@ var (
 	bail           bool
 	filters        []string
 	quiet          bool
+	dataPath       string
 	run            = &cobra.Command{
 		Use:   "run",
 		Short: "Runs all mon files",
@@ -42,17 +43,19 @@ var (
 			if !cmd.Flags().Changed("env") {
 				env = os.Getenv(config.EnvVar)
 			}
+			var rows []runner.Row
+			if dataPath != "" {
+				if rows, err = runner.LoadData(dataPath); err != nil {
+					return &exitError{code: ExitUsage, err: err}
+				}
+			}
 			opts := &runner.Opts{Env: env, Vars: vars, ConfigPath: configPath, Bail: bail, Filters: filters, Quiet: quiet}
 			rep, closeOut, err := newReporter(reporterName, outPath, opts, cmd.OutOrStdout())
 			if err != nil {
 				return &exitError{code: ExitUsage, err: err}
 			}
 			r := runner.NewWithReporter(opts, rep)
-			if singleFile != "" {
-				err = runSingleFile(r, singleFile)
-			} else {
-				err = runAllFiles(r, recursiveLevel)
-			}
+			err = runIterations(r, rows)
 			if herr := r.AfterAll(); herr != nil {
 				if err == nil {
 					err = &exitError{code: ExitFailed, err: herr}
@@ -80,6 +83,7 @@ func init() {
 	run.Flags().BoolVar(&bail, "bail", false, "stop at the first failed request")
 	run.Flags().StringArrayVar(&filters, "filter", nil, "only run requests whose @name, ### title or \"METHOD URL\" matches this glob (repeatable)")
 	run.Flags().BoolVarP(&quiet, "quiet", "q", false, "hide response headers and bodies")
+	run.Flags().StringVar(&dataPath, "data", "", "run everything once per row of this CSV or JSON file, with the row's values as variables")
 }
 
 // newReporter builds the reporter for --reporter/--out. With json or junit
@@ -133,6 +137,43 @@ func parseVars(flags []string) (map[string]string, error) {
 	return vars, nil
 }
 
+// runIterations runs the -s file or every .mon file, once, or once per
+// --data row, and returns the most severe failure.
+func runIterations(r *runner.Runner, rows []runner.Row) error {
+	runOnce := func() error { return runSingleFile(r, singleFile) }
+	if singleFile == "" {
+		files, err := FindMonFiles(".", recursiveLevel)
+		if err != nil {
+			return &exitError{code: ExitUsage, err: fmt.Errorf("finding mon files: %w", err)}
+		}
+		files = r.Order(files)
+		logging.Log.Info().Msgf("Found %d mon files", len(files))
+		runOnce = func() error { return runFiles(r, files) }
+	}
+	if len(rows) == 0 {
+		return runOnce()
+	}
+	worst, failed := ExitOK, 0
+	for i, row := range rows {
+		if r.Bailed() {
+			break
+		}
+		logging.Log.Info().Msgf("Data row %d of %d", i+1, len(rows))
+		r.SetIteration(i+1, row)
+		if err := runOnce(); err != nil {
+			failed++
+			logging.Log.Error().Msgf("data row %d: %v", i+1, err)
+			if code := exitCode(err); code > worst {
+				worst = code
+			}
+		}
+	}
+	if failed > 0 {
+		return &exitError{code: worst, err: fmt.Errorf("%d of %d data rows failed", failed, len(rows))}
+	}
+	return nil
+}
+
 func runSingleFile(r *runner.Runner, file string) error {
 	if err := r.RunFile(file); err != nil {
 		return classify(err)
@@ -140,15 +181,9 @@ func runSingleFile(r *runner.Runner, file string) error {
 	return nil
 }
 
-// runAllFiles runs every .mon file, continuing past failures, and returns an
+// runFiles runs files in order, continuing past failures, and returns an
 // error carrying the most severe exit code seen.
-func runAllFiles(r *runner.Runner, level int) error {
-	files, err := FindMonFiles(".", level)
-	if err != nil {
-		return &exitError{code: ExitUsage, err: fmt.Errorf("finding mon files: %w", err)}
-	}
-	files = r.Order(files)
-	logging.Log.Info().Msgf("Found %d mon files", len(files))
+func runFiles(r *runner.Runner, files []string) error {
 	worst, failed := ExitOK, 0
 	for _, file := range files {
 		if r.Bailed() {

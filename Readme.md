@@ -23,6 +23,20 @@ Monica is designed to handle Network requests and responses.
 	Requests skipped by `--filter` don't run their scripts either, so variables they would set
 	(`vars.set`) are not available to later requests.
 
+* Run everything once per row of a data file (data-driven run)
+	```bash
+	monica run --data users.csv
+	```
+	The CSV's first line names the variables (`user,pass`); each later line is one iteration.
+	A `.json` file is an array of objects (`[{"user": "ada", "id": 7}]`): strings are used as
+	is, `null` as an empty value, numbers, booleans, arrays and objects as their JSON text. Each
+	row runs every selected file in run order, with the row's values as `{{variables}}`;
+	`monica.iteration` is the row number (1-based). A `vars.set` value for one of the row's
+	names is dropped when the next row starts; other `vars.set` values carry over. Folder
+	`beforeAll` hooks run once, before the first row that needs them, and `afterAll` at the
+	end. Reports name the row (`(api.mon:3, row 2)`), and `--bail` stops all later rows. A
+	missing, empty or invalid data file is a usage error.
+
 * Pick an environment, override variables, or use a specific config file
 	```bash
 	monica run --env dev --var token=abc --var id=7 --config ./monica.yml
@@ -40,6 +54,7 @@ Monica is designed to handle Network requests and responses.
 | `--bail` | Stop at the first failed request (later requests and files are not run) |
 | `--filter <glob>` | Only run requests whose `@name`, `###` title or `METHOD URL` matches; `*` matches any text, `?` one character; repeatable |
 | `-q, --quiet` | Hide response headers and bodies in the console report |
+| `--data <file>` | Run once per row of a `.csv` or `.json` file, with the row's values as variables |
 
 The report goes to stdout; logs and errors go to stderr. For each request it prints a status
 line, the response, and ✓/✗ per test (with the failure message), then a summary:
@@ -71,11 +86,11 @@ monica run --reporter junit --out monica-report.xml
 ```
 
 * **JSON**: `{"summary": {...}, "requests": [{"file", "line", "name", "method", "url",
-  "status", "statusText", "durationMs", "skipped", "skipReason", "error", "failed",
+  "status", "statusText", "durationMs", "iteration" (with `--data`), "skipped", "skipReason", "error", "failed",
   "tests": [{"name", "passed", "error"}]}]}`. Response bodies are not included.
 * **JUnit**: one `<testsuite>` per `.mon` file; each `test()` is a `<testcase>` (a request
   without tests is one testcase). Failed tests are `<failure>`, request or script errors
-  `<error>`, `@skip` requests `<skipped>`.
+  `<error>`, `@skip` requests `<skipped>`. With `--data`, testcase classnames end in `[row N]`.
 
 ### Exit codes
 | Code | Meaning |
@@ -107,6 +122,7 @@ share data between requests with `vars`.
 | `res.json()` (throws on invalid JSON) | – | ✓ |
 | `vars.get(n)` (`undefined` if unset) / `vars.has(n)` / `vars.set(n, v)` | ✓ | ✓ |
 | `monica.env` (selected environment or `""`) | ✓ | ✓ |
+| `monica.iteration` (`--data` row, 1-based; `0` without `--data`) | ✓ | ✓ |
 | `console.log/info/warn/error` (to the log, secrets masked) | ✓ | ✓ |
 | `test(name, fn)`, `expect(value)` | ✓ | ✓ |
 | `require(path)`, `import` statements ([Modules](#modules)) | ✓ | ✓ |
@@ -413,7 +429,8 @@ a failing request does not stop the ones after it.
   * At most one pre-request and one post-response script per request (inline or file).
 * **Variables** — `{{name}}` in the URL, header values and body is replaced by a variable's
   value (spaces inside the braces are allowed: `{{ name }}`). Values come from, highest first:
-  `--var name=value`, `vars.set()` in a script, the selected environment's `vars`, then
+  `--var name=value`, `vars.set()` in a script, the `--data` row, the selected
+  environment's `vars`, then
   `defaults.vars` (see
   [Configuration](#configuration)). An unknown variable is an input error (`file:line`).
   Built-ins: `{{$uuid}}` (random v4 UUID), `{{$timestamp}}` (Unix seconds),

@@ -20,8 +20,11 @@ type Vars interface {
 
 // Context is the run state a script can see.
 type Context struct {
-	Env  string // monica.env; "" when no environment is selected
-	Vars Vars
+	Env string // monica.env; "" when no environment is selected
+	// Iteration is monica.iteration: the 1-based --data row, 0 without
+	// --data.
+	Iteration int
+	Vars      Vars
 	// Timeout bounds each script run; zero means DefaultTimeout.
 	Timeout time.Duration
 }
@@ -47,6 +50,7 @@ func (e *Engine) RunPost(s *request.Script, req *request.Request, res *net.HTTPR
 func (e *Engine) globals(ctx Context, req, res *goja.Object) map[string]any {
 	monica := e.rt.NewObject()
 	_ = monica.Set("env", ctx.Env)
+	_ = monica.Set("iteration", ctx.Iteration)
 	g := map[string]any{"req": req, "vars": e.newVars(ctx.Vars), "monica": monica}
 	if res != nil {
 		g["res"] = res

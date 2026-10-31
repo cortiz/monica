@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -27,8 +28,8 @@ func runCLI(t *testing.T, args ...string) (code int, stdout, stderr string) {
 	singleFile, recursiveLevel = "", 1
 	envName, varFlags, configPath = "", nil, ""
 	reporterName, outPath = "console", ""
-	bail, filters, quiet = false, nil, false
-	for _, name := range []string{"env", "var", "config", "single", "recursive", "reporter", "out", "bail", "filter", "quiet"} {
+	bail, filters, quiet, dataPath = false, nil, false, ""
+	for _, name := range []string{"env", "var", "config", "single", "recursive", "reporter", "out", "bail", "filter", "quiet", "data"} {
 		if f := run.Flags().Lookup(name); f != nil {
 			f.Changed = false
 		}
@@ -325,4 +326,92 @@ func TestRunOrder(t *testing.T) {
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Fatalf("run order %v, want %v", got, want)
 	}
+}
+
+func TestRunData(t *testing.T) {
+	var mu sync.Mutex
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen = append(seen, r.URL.RequestURI())
+		mu.Unlock()
+		if r.URL.Query().Get("user") == "bad" {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	// The pre-request script records what it sees, then overrides user with
+	// vars.set: the second request still sees "script", but the next row
+	// starts again from its own value.
+	mon := writeMon(t, dir, "api.mon", "< {%\n  req.url += \"&it=\" + monica.iteration + \"&prev=\" + vars.get(\"user\");\n  vars.set(\"user\", \"s-\" + vars.get(\"user\"));\n%}\n"+
+		"GET "+srv.URL+"/a?user={{user}}\n\n###\n"+
+		"GET "+srv.URL+"/b?user={{user}}&pass={{pass}}&orig={{orig}}\n> {% test(\"ok\", () => expect(res.status).toBe(200)) %}\n")
+
+	run := func(t *testing.T, args ...string) (int, string, string) {
+		mu.Lock()
+		seen = nil
+		mu.Unlock()
+		return runCLI(t, append([]string{"run", "-s", mon}, args...)...)
+	}
+
+	t.Run("one iteration per row", func(t *testing.T) {
+		data := writeMon(t, dir, "ok.csv", "user,pass,orig\nada,p1,ada\nbob,p2,bob\n")
+		code, stdout, stderr := run(t, "--data", data, "--var", "pass=cli")
+		if code != ExitOK {
+			t.Fatalf("exit %d: %s", code, stderr)
+		}
+		want := []string{
+			"/a?user=s-ada&it=1&prev=ada", "/b?user=s-ada&pass=cli&orig=ada",
+			"/a?user=s-bob&it=2&prev=bob", "/b?user=s-bob&pass=cli&orig=bob",
+		}
+		if strings.Join(seen, " ") != strings.Join(want, " ") {
+			t.Fatalf("requests:\n got %v\nwant %v", seen, want)
+		}
+		if !strings.Contains(stdout, "api.mon:5, row 2)") {
+			t.Fatalf("console report does not name the row: %s", stdout)
+		}
+	})
+
+	t.Run("failing row fails the run, later rows still run", func(t *testing.T) {
+		data := writeMon(t, dir, "bad.json", `[{"user": "x", "pass": 1, "orig": "a"}, {"user": "y", "pass": 2, "orig": "bad"}, {"user": "z", "pass": 3, "orig": "c"}]`)
+		mon2 := writeMon(t, dir, "orig.mon", "GET "+srv.URL+"/c?user={{orig}}\n> {% test(\"ok\", () => expect(res.status).toBe(200)) %}\n")
+		code, stdout, stderr := runCLI(t, "run", "-s", mon2, "--data", data, "--reporter", "json")
+		if code != ExitFailed || !strings.Contains(stderr, "1 of 3 data rows failed") {
+			t.Fatalf("exit %d, stderr %s", code, stderr)
+		}
+		var doc struct {
+			Requests []struct {
+				Iteration int  `json:"iteration"`
+				Failed    bool `json:"failed"`
+			} `json:"requests"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+			t.Fatal(err)
+		}
+		if len(doc.Requests) != 3 || doc.Requests[1].Iteration != 2 || !doc.Requests[1].Failed || doc.Requests[2].Failed {
+			t.Fatalf("requests = %+v", doc.Requests)
+		}
+	})
+
+	t.Run("bail stops at the failing row", func(t *testing.T) {
+		data := writeMon(t, dir, "bail.csv", "orig\nok\nbad\nlater\n")
+		mon2 := writeMon(t, dir, "bail.mon", "GET "+srv.URL+"/d?user={{orig}}\n> {% test(\"ok\", () => expect(res.status).toBe(200)) %}\n")
+		mu.Lock()
+		seen = nil
+		mu.Unlock()
+		code, _, _ := runCLI(t, "run", "-s", mon2, "--data", data, "--bail")
+		if code != ExitFailed || len(seen) != 2 {
+			t.Fatalf("exit %d, server saw %v", code, seen)
+		}
+	})
+
+	t.Run("invalid data file is a usage error", func(t *testing.T) {
+		data := writeMon(t, dir, "empty.csv", "user\n")
+		code, _, stderr := run(t, "--data", data)
+		if code != ExitUsage || !strings.Contains(stderr, "no data rows") || len(seen) != 0 {
+			t.Fatalf("exit %d, stderr %s, server saw %v", code, stderr, seen)
+		}
+	})
 }
