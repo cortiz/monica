@@ -21,6 +21,10 @@ type Request struct {
 	// Skip is set by "# @skip [reason]": the request is parsed but not sent.
 	Skip       bool
 	SkipReason string
+	// Retries and RetryDelay come from "# @retry <count> [delay]": a failed
+	// request is sent again up to Retries more times, RetryDelay apart.
+	Retries    int
+	RetryDelay time.Duration
 	Method     string
 	URL        string
 	// Proto is the HTTP version from the request line ("HTTP/1.1"), or empty

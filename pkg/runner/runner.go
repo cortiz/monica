@@ -207,10 +207,10 @@ func fileFailure(file string, err error) report.Request {
 	return res
 }
 
-// runRequest runs one request: beforeEach hooks, pre-request script, {{}}
-// expansion, send, post-response script, afterEach hooks (innermost
-// first). It returns the (masked) report entry and the error, if any, that
-// fails the run. A request under a failed monica.js is skipped.
+// runRequest runs one request (see attempt), sending it again up to
+// @retry times while it fails. It returns the (masked) report entry of the
+// last attempt and the error, if any, that fails the run. A request under a
+// failed monica.js is skipped.
 func (r *Runner) runRequest(file string, req *request.Request, p *project, chain []*hookFile) (report.Request, error) {
 	where := fmt.Sprintf("%s:%d", file, req.Line)
 	out := report.Request{File: file, Line: req.Line, Name: req.Label(), Method: req.Method, URL: p.mask.String(req.URL)}
@@ -230,7 +230,36 @@ func (r *Runner) runRequest(file string, req *request.Request, p *project, chain
 	}
 	logging.Log.Info().Msgf("%s: %s", where, req.Label())
 	r.mask = p.mask
+	attempts := 1 + req.Retries
+	for n := 1; ; n++ {
+		res, err := r.attempt(file, where, req, p, chain, out)
+		if n > 1 {
+			res.Attempts = n
+		}
+		if err == nil || n == attempts || !retryable(err) {
+			return res, err
+		}
+		msg := fmt.Sprintf("%s: %s: attempt %d of %d failed; retrying", where, req.Label(), n, attempts)
+		if req.RetryDelay > 0 {
+			msg += " in " + req.RetryDelay.String()
+		}
+		logging.Log.Warn().Msg(msg)
+		time.Sleep(req.RetryDelay)
+	}
+}
 
+// retryable reports whether a failed attempt is worth repeating: input
+// errors (unknown variable, script syntax error) fail the same way again.
+func retryable(err error) bool {
+	var ie *InputError
+	return !errors.As(err, &ie)
+}
+
+// attempt sends req once: beforeEach hooks, pre-request script, {{}}
+// expansion, send, post-response script, afterEach hooks (innermost first).
+// out is the report entry to fill in. A beforeEach hook or pre-request
+// script that calls req.skip() skips the request.
+func (r *Runner) attempt(file, where string, req *request.Request, p *project, chain []*hookFile, out report.Request) (report.Request, error) {
 	// fail records err in the report (prefixed with stage) and returns it
 	// for the exit code, prefixed with the request's location.
 	fail := func(stage string, err error) (report.Request, error) {
@@ -250,11 +279,24 @@ func (r *Runner) runRequest(file string, req *request.Request, p *project, chain
 	ctx := r.hookContext(p)
 	working := *req
 	working.Headers = req.Headers.Clone()
+	// skipped reports a req.skip() call from stage.
+	skipped := func(stage string) (report.Request, error) {
+		out.Skipped, out.SkipReason = true, p.mask.String(working.SkipReason)
+		msg := fmt.Sprintf("%s: skipping %s (req.skip() in %s)", where, req.Label(), stage)
+		if out.SkipReason != "" {
+			msg += ": " + out.SkipReason
+		}
+		logging.Log.Info().Msg(msg)
+		return out, nil
+	}
 	for _, h := range chain {
 		results, err := h.engine.RunBeforeEach(h.hooks, &working, ctx)
 		out.Tests = append(out.Tests, maskTests(p, results)...)
 		if err != nil {
 			return fail("beforeEach hook ("+h.file+")", err)
+		}
+		if working.Skip {
+			return skipped("beforeEach hook (" + h.file + ")")
 		}
 	}
 	if req.PreScript != nil {
@@ -262,6 +304,9 @@ func (r *Runner) runRequest(file string, req *request.Request, p *project, chain
 		out.Tests = append(out.Tests, maskTests(p, results)...)
 		if err != nil {
 			return fail("pre-request script", err)
+		}
+		if working.Skip {
+			return skipped("pre-request script")
 		}
 	}
 	rendered, err := r.render(&working, p.settings)

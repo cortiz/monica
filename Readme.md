@@ -86,7 +86,7 @@ monica run --reporter junit --out monica-report.xml
 ```
 
 * **JSON**: `{"summary": {...}, "requests": [{"file", "line", "name", "method", "url",
-  "status", "statusText", "durationMs", "iteration" (with `--data`), "skipped", "skipReason", "error", "failed",
+  "status", "statusText", "durationMs", "iteration" (with `--data`), "attempts" (with `@retry`), "skipped", "skipReason", "error", "failed",
   "tests": [{"name", "passed", "error"}]}]}`. Response bodies are not included.
 * **JUnit**: one `<testsuite>` per `.mon` file; each `test()` is a `<testcase>` (a request
   without tests is one testcase). Failed tests are `<failure>`, request or script errors
@@ -112,11 +112,30 @@ share data between requests with `vars`.
 `{{variable}}` expansion and default headers → send → print response → post-response script →
 `afterEach` hooks.
 
+**Skipping and retrying** — `req.skip("reason")` in a pre-request script or `beforeEach` hook
+skips the request (reported as skipped, not a failure): it is not sent, and later
+`beforeEach` hooks, the pre-request script, the post-response script and `afterEach` hooks
+don't run. With `# @retry <count> [delay]`, a request that fails (connection error, timeout,
+a script or hook throwing, a failed `test()`) runs again from `beforeEach`, up to `count`
+more times; only the last attempt is reported, with its attempt count. An HTTP error status
+alone is not a failure, so to retry on `5xx` add a test such as
+`test("ok", () => expect(res.status).toBeLessThan(500))`. Input errors (unknown variable,
+script syntax error) and `req.skip()` are not retried; scripts rerun on each attempt, so
+`vars.set` effects add up.
+
+```
+# @retry 3 1s
+< {% if (monica.env !== "staging") req.skip("staging only") %}
+GET {{baseUrl}}/jobs/{{jobId}}
+> {% test("done", () => expect(res.json().state).toBe("done")) %}
+```
+
 | Global | Pre-request | Post-response |
 |--------|-------------|---------------|
 | `req.method`, `req.url`, `req.body` | read/write (before `{{}}` expansion) | read-only (as sent) |
 | `req.headers.get(n)` / `.has(n)` / `.all()` | ✓ | ✓ |
 | `req.headers.set(n, v)` / `.add(n, v)` / `.delete(n)` | ✓ | throws |
+| `req.skip([reason])` (don't send the request; the script still runs to its end) | ✓ | throws |
 | `res.status`, `res.statusText`, `res.body`, `res.time` (ms) | – | ✓ |
 | `res.headers.get(n)` (values joined by `, `, `null` if absent) / `.has(n)` / `.all()` | – | ✓ |
 | `res.json()` (throws on invalid JSON) | – | ✓ |
@@ -396,6 +415,7 @@ a failing request does not stop the ones after it.
   | `# @name <name>` | Names the request (letters, digits, `_`, `-`, `.`; not starting with a digit). Unique within a file. Shown in logs and errors; used for chaining later. |
   | `# @timeout <duration>` | Per-request timeout, e.g. `500ms`, `5s`, `1m`. Overrides the default (30s). |
   | `# @skip [reason]` | Parse the request but don't send it. |
+  | `# @retry <count> [delay]` | Send a failed request again, up to `count` (1–100) more times, waiting `delay` (e.g. `1s`, default none) in between. |
 * **Request line** — `METHOD URL`, optionally followed by an HTTP version such as `HTTP/1.1`.
   The method must be a valid HTTP token; the URL must be absolute with an `http`/`https`
   scheme and a host.

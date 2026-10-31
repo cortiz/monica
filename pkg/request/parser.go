@@ -1,12 +1,14 @@
 package request
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -89,6 +91,8 @@ type directives struct {
 	timeout    time.Duration
 	skip       bool
 	skipReason string
+	retries    int
+	retryDelay time.Duration
 }
 
 // parse reads each section in turn: comments/blank lines, the request line,
@@ -176,6 +180,8 @@ func (p *parser) line(lineNo int, line, rawLine string) error {
 			Timeout:    p.meta.timeout,
 			Skip:       p.meta.skip,
 			SkipReason: p.meta.skipReason,
+			Retries:    p.meta.retries,
+			RetryDelay: p.meta.retryDelay,
 			PreScript:  p.pre,
 			Headers:    make(http.Header),
 		}
@@ -312,16 +318,45 @@ func (p *parser) directive(lineNo int, text string) error {
 		m.timeout = d
 	case "skip":
 		m.skip, m.skipReason = true, value
+	case "retry":
+		n, delay, err := parseRetry(value)
+		if err != nil {
+			return p.fail(lineNo, "invalid @retry %q (%v)", value, err)
+		}
+		m.retries, m.retryDelay = n, delay
 	case "":
 		return p.fail(lineNo, "empty directive")
 	default:
-		return p.fail(lineNo, "unknown directive @%s (known: @name, @timeout, @skip)", key)
+		return p.fail(lineNo, "unknown directive @%s (known: @name, @timeout, @skip, @retry)", key)
 	}
 	if m.seen == nil {
 		m.seen, m.firstLine = map[string]int{}, lineNo
 	}
 	m.seen["@"+key] = lineNo
 	return nil
+}
+
+// MaxRetries bounds @retry so a typo can't stall a run.
+const MaxRetries = 100
+
+// parseRetry parses "<count> [delay]": count retries (1..MaxRetries) with an
+// optional non-negative Go duration between attempts.
+func parseRetry(value string) (int, time.Duration, error) {
+	fields := strings.Fields(value)
+	if len(fields) == 0 || len(fields) > 2 {
+		return 0, 0, errors.New("expected a retry count and an optional delay, e.g. \"3 1s\"")
+	}
+	n, err := strconv.Atoi(fields[0])
+	if err != nil || n < 1 || n > MaxRetries {
+		return 0, 0, fmt.Errorf("count must be a whole number from 1 to %d", MaxRetries)
+	}
+	var delay time.Duration
+	if len(fields) == 2 {
+		if delay, err = time.ParseDuration(fields[1]); err != nil || delay < 0 {
+			return 0, 0, errors.New("delay must be a duration such as 500ms or 1s")
+		}
+	}
+	return n, delay, nil
 }
 
 func trimTrailingBlank(lines []string) []string {

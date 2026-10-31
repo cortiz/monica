@@ -27,6 +27,9 @@ type Request struct {
 	Duration   time.Duration `json:"-"`
 	Skipped    bool          `json:"skipped,omitempty"`
 	SkipReason string        `json:"skipReason,omitempty"`
+	// Attempts is how many times the request was sent under @retry; 0 when
+	// it was sent (at most) once.
+	Attempts int `json:"attempts,omitempty"`
 	// Error is why the request failed before or after sending (input,
 	// connection or script error); empty otherwise. Failed tests are in Tests.
 	Error string              `json:"error,omitempty"`
