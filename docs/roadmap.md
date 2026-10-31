@@ -246,10 +246,58 @@ bytes; `httptrace` timings (DNS, connect, TLS, TTFB). Stdlib-only histogram
 ## Phase 8 — Polish & distribution
 
 - 8.1 `monica init` — scaffold `monica.yml`, example `.mon`, `.gitignore` entries.
-- 8.2 `monica import curl '<cmd>'` → `.mon`; later Postman/Bruno collection import.
+- 8.2 `monica import curl '<cmd>'` → `.mon` (Postman/Bruno import live in Phase 9).
 - 8.3 Cookies (`cookie jar` per run), multipart/form-data, file upload.
 - 8.4 Docs site / full format reference; examples folder.
 - 8.5 Release: goreleaser + Docker image updated with new commands.
+
+---
+
+## Phase 9 — Integrations & UI (no particular order)
+
+Independent tracks: they can be picked up in any order once their prerequisites are done.
+
+| ID | Task | Size | Needs |
+|----|------|------|-------|
+| 9.1 | TUI (`monica tui`) 🔒 | L | Phases 1, 2 (better with 4) |
+| 9.2 | Import from Postman | L | Phases 1, 2 (scripts: 3–4) |
+| 9.3 | Import from Bruno | L | Phases 1, 2 (scripts: 3–4) |
+
+**9.1 TUI** — interactive terminal UI over the same runner (no separate logic).
+🔒 `github.com/charmbracelet/bubbletea` + `bubbles` + `lipgloss`.
+- 9.1.1 Layout: collection tree (folders → `.mon` files → requests) | request view | response view.
+- 9.1.2 Environment picker (from `monica.yml`), resolved variables panel (secrets masked).
+- 9.1.3 Send request; response tabs: body (pretty JSON, syntax highlight), headers, timings, tests ✓/✗.
+- 9.1.4 Open request in `$EDITOR`, reload on save; history of the session's runs.
+- 9.1.5 Load-test dashboard: live VUs, RPS, p95, error rate (reuses Phase 7 metrics stream).
+- Keep the runner emitting events (started / response / test result) so CLI reporters and
+  the TUI consume the same stream — design this into 4.2.
+- ✅ Done when: everything doable in the TUI is also doable via `monica run`; TUI has model-level tests (bubbletea `Update` is pure).
+
+**9.2 Import from Postman** — `monica import postman <collection.json> [--env env.json] --out ./dir`
+- 9.2.1 Parse Collection **v2.1** JSON (stdlib `encoding/json`); folders → directories, items → `.mon` files.
+- 9.2.2 Requests: method, URL (raw + query), headers, bodies (raw, urlencoded, form-data, file refs).
+- 9.2.3 Variables: collection vars + environment files → `monica.yml` (`defaults.vars`, `envs.<name>`);
+  `{{var}}` syntax already matches. Secret-typed values → `${ENV_NAME}` placeholders, never written in clear.
+- 9.2.4 Auth blocks (bearer, basic, API key) → headers with variables.
+- 9.2.5 Scripts: copy pre-request/test scripts into script blocks; ship a `pm` compatibility shim
+  (`pm.test`, `pm.expect` subset, `pm.response.json()/code/headers`, `pm.environment/collectionVariables.get/set`).
+  Unsupported calls → `// TODO(monica-import):` comments + a summary warning.
+- ✅ Done when: fixture collections (simple, nested folders, auth, scripts) import and the result runs; import report lists everything not converted.
+
+**9.3 Import from Bruno** — `monica import bruno <collection-dir> --out ./dir`
+- 9.3.1 Write a `.bru` parser (Bru lang has no Go library): `meta`, `get/post/…`, `headers`,
+  `params:query`, `body:json|text|form-urlencoded|multipart-form`, `auth:*`, `vars:pre-request/post-response`,
+  `script:pre-request/post-response`, `tests`, `assert`.
+- 9.3.2 `bruno.json` + `collection.bru` + `folder.bru` → `monica.yml` defaults / folder `monica.js` hooks (5.4).
+- 9.3.3 `environments/*.bru` → `envs.<name>`; `vars:secret` → `${ENV_NAME}` placeholders.
+- 9.3.4 Scripts/tests: copy into script blocks with a `bru` / Bruno-`res` compatibility shim
+  (`bru.setVar/getVar/getEnvVar`, `res.getStatus()/getBody()/getHeader()`); `assert` blocks → generated `expect()` calls.
+- 9.3.5 Keep Bruno's `seq` ordering (maps to 6.1 order).
+- ✅ Done when: fixture collections round-trip into runnable `.mon` files with an import report of unconverted items.
+
+Shared for 9.2/9.3: a common `pkg/importer` (interface + `.mon`/`monica.yml` writer + report),
+so each source only implements parsing.
 
 ---
 
@@ -261,9 +309,15 @@ bytes; `httptrace` timings (DNS, connect, TLS, TTFB). Stdlib-only histogram
 | `github.com/dop251/goja` | 3 | 🔒 needs approval |
 | `github.com/dop251/goja_nodejs` | 5 | 🔒 needs approval |
 | `github.com/evanw/esbuild` | 5.5 | 🔒 optional |
+| `github.com/charmbracelet/bubbletea`, `bubbles`, `lipgloss` | 9.1 | 🔒 needs approval |
+
+Postman and Bruno import need no new dependencies (stdlib JSON + hand-written `.bru` parser).
 
 ## Suggested order
 
 `0.1 → 0.2 → 0.3 → 0.4 → 1.1 → 1.2 → 2.1 → 2.2 → 2.3 → 2.4 → 2.5 → 1.3 → 3.x → 4.x → 5.x → 6.x → 7.x → 8.x`
 
 (1.3 is parked until right before Phase 3 so the script syntax is designed with the engine in hand.)
+
+Phase 9 tracks (TUI, Postman import, Bruno import) have no fixed order — slot each in
+whenever its prerequisites are met. Basic request import (no scripts) is possible right after Phase 2.
