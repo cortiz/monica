@@ -146,7 +146,7 @@ via `runtime.Interrupt`.
 
 ---
 
-## Phase 4 — Tests & reporting
+## Phase 4 — Tests & reporting ✅ done
 
 | ID | Task | Size |
 |----|------|------|
@@ -315,7 +315,7 @@ Postman and Bruno import need no new dependencies (stdlib JSON + hand-written `.
 
 ## Suggested order
 
-`0.x → 1.x → 2.x → 3.x` (done) `→ 4.x → 5.x → 6.x → 7.x → 8.x`
+`0.x → 1.x → 2.x → 3.x → 4.x` (done) `→ 5.x → 6.x → 7.x → 8.x`
 
 1.3 landed before Phase 2 as parse-only; revisit the script syntax in 3.x if the engine
 needs changes (e.g. `%}` inside code).
