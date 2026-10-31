@@ -31,13 +31,14 @@ func (e *ParseError) Error() string {
 	}
 }
 
-// ParseRequest parses a raw HTTP request and returns a Request object.
-func ParseRequest(raw string) (*Request, error) {
+// ParseRequest parses raw .mon text and returns its requests in source order.
+func ParseRequest(raw string) ([]*Request, error) {
 	return parse("", raw)
 }
 
-// ParseMonFile reads and parses a .mon file.
-func ParseMonFile(file string) (*Request, error) {
+// ParseMonFile reads and parses a .mon file and returns its requests in
+// source order.
+func ParseMonFile(file string) ([]*Request, error) {
 	logging.Log.Debug().Msgf("Parsing file: %s", file)
 	monFile, err := os.ReadFile(file)
 	if err != nil {
@@ -51,52 +52,108 @@ type parseState int
 const (
 	stateRequestLine parseState = iota
 	stateHeaders
+	stateBody
 )
 
-// parse reads, in order: comments/blank lines, the request line, header lines
-// (comments allowed) up to the first blank line, then the body verbatim.
-func parse(file, raw string) (*Request, error) {
+// parser holds the state of one parse. A source is a sequence of sections
+// separated by "###" lines; each section holds at most one request.
+type parser struct {
+	file  string
+	state parseState
+	reqs  []*Request
+
+	// Current section.
+	title string
+	req   *Request // nil until the request line is seen
+	body  []string // raw body lines, terminators included
+}
+
+// parse reads each section in turn: comments/blank lines, the request line,
+// header lines (comments allowed) up to the first blank line, then the body
+// verbatim up to the next separator or EOF.
+func parse(file, raw string) ([]*Request, error) {
 	logging.Log.Debug().Msg("Parsing request")
-	req := &Request{}
-	state := stateRequestLine
-	fail := func(line int, format string, args ...any) error {
-		return &ParseError{File: file, Line: line, Msg: fmt.Sprintf(format, args...)}
-	}
+	p := &parser{file: file}
+	for i, rawLine := range strings.SplitAfter(raw, "\n") {
+		if rawLine == "" {
+			continue // after a trailing "\n"
+		}
+		lineNo := i + 1
+		line := strings.TrimSuffix(strings.TrimSuffix(rawLine, "\n"), "\r")
 
-	rest := raw
-	for lineNo := 1; rest != ""; lineNo++ {
-		var line string
-		line, rest, _ = strings.Cut(rest, "\n")
-		line = strings.TrimSuffix(line, "\r")
-
-		if strings.HasPrefix(line, "#") {
-			logging.Log.Trace().Msgf("Skipping comment: %s", line)
+		if strings.HasPrefix(line, "###") {
+			p.endSection(true)
+			p.title = strings.TrimSpace(strings.TrimLeft(line, "#"))
 			continue
 		}
-		switch state {
-		case stateRequestLine:
-			if strings.TrimSpace(line) == "" {
-				continue
-			}
-			if err := parseRequestLine(line, req); err != nil {
-				return nil, fail(lineNo, "%v", err)
-			}
-			req.Headers = make(http.Header)
-			state = stateHeaders
-		case stateHeaders:
-			if strings.TrimSpace(line) == "" {
-				req.Body = rest
-				return req, nil
-			}
-			if err := parseHeader(line, req.Headers); err != nil {
-				return nil, fail(lineNo, "%v", err)
-			}
+		if err := p.line(lineNo, line, rawLine); err != nil {
+			return nil, err
 		}
 	}
-	if state == stateRequestLine {
-		return nil, fail(0, "missing request line (expected \"METHOD URL [HTTP/x.y]\")")
+	p.endSection(false)
+	if len(p.reqs) == 0 {
+		return nil, p.fail(0, "missing request line (expected \"METHOD URL [HTTP/x.y]\")")
 	}
-	return req, nil // headers ran to EOF: no body
+	return p.reqs, nil
+}
+
+func (p *parser) fail(line int, format string, args ...any) error {
+	return &ParseError{File: p.file, Line: line, Msg: fmt.Sprintf(format, args...)}
+}
+
+// line handles one non-separator line of the current section.
+func (p *parser) line(lineNo int, line, rawLine string) error {
+	if p.state == stateBody {
+		p.body = append(p.body, rawLine)
+		return nil
+	}
+	if strings.HasPrefix(line, "#") {
+		logging.Log.Trace().Msgf("Skipping comment: %s", line)
+		return nil
+	}
+	switch p.state {
+	case stateRequestLine:
+		if strings.TrimSpace(line) == "" {
+			return nil
+		}
+		req := &Request{File: p.file, Line: lineNo, Title: p.title, Headers: make(http.Header)}
+		if err := parseRequestLine(line, req); err != nil {
+			return p.fail(lineNo, "%v", err)
+		}
+		p.req = req
+		p.state = stateHeaders
+	case stateHeaders:
+		if strings.TrimSpace(line) == "" {
+			p.state = stateBody
+			return nil
+		}
+		if err := parseHeader(line, p.req.Headers); err != nil {
+			return p.fail(lineNo, "%v", err)
+		}
+	}
+	return nil
+}
+
+// endSection finishes the current section. A body cut off by a separator
+// loses its trailing blank lines (the newline ending its last line is kept);
+// a body that runs to EOF is kept verbatim.
+func (p *parser) endSection(bySeparator bool) {
+	if p.req != nil {
+		body := p.body
+		if bySeparator {
+			body = trimTrailingBlank(body)
+		}
+		p.req.Body = strings.Join(body, "")
+		p.reqs = append(p.reqs, p.req)
+	}
+	p.state, p.title, p.req, p.body = stateRequestLine, "", nil, nil
+}
+
+func trimTrailingBlank(lines []string) []string {
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
 }
 
 // parseHeader splits "Name: value" on the first colon only.

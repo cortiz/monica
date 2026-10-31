@@ -36,7 +36,14 @@ Header-Name: value
 Header-Name: another value
 
 BODY
+
+### Optional title
+METHOD URL
+...
 ```
+
+A file holds one or more requests, separated by `###` lines. Requests run in file order;
+a failing request does not stop the ones after it.
 
 * **Comments** — lines starting with `#` before the body are ignored (before the request
   line and between headers). Blank lines before the request line are ignored too.
@@ -48,6 +55,11 @@ BODY
   value. Header names are case-insensitive.
 * **Body** — everything after the first blank line, kept verbatim (including lines starting
   with `#` and trailing newlines). With no blank line the request has no body.
+* **Separator** — any line starting with `###` ends the current request and starts a new one,
+  even inside a body. Text after the `###` is the request's title (used in logs and errors).
+  Sections with no request line (only comments or blank lines) are ignored.
+  A body that ends at a separator loses its trailing blank lines; the body of the last request
+  in the file is kept verbatim.
 * Both `\n` and `\r\n` line endings are accepted.
 
 #### Example
@@ -68,4 +80,16 @@ User-Agent: monica/0.1.0
 {
   "key": "value"
 }
+```
+
+```
+### List users
+GET http://example.com/users
+Accept: application/json
+
+### Create user
+POST http://example.com/users
+Content-Type: application/json
+
+{"name": "ada"}
 ```

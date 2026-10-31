@@ -1,9 +1,11 @@
 package runner
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
+	"jmpeax.com/sec/monica/internal/logging"
 	"jmpeax.com/sec/monica/pkg/net"
 	"jmpeax.com/sec/monica/pkg/request"
 )
@@ -17,17 +19,27 @@ type InputError struct {
 func (e *InputError) Error() string { return e.Err.Error() }
 func (e *InputError) Unwrap() error { return e.Err }
 
-// RunSingleFile parses file, sends the request and writes the response to out.
-// Read and parse failures are returned as *InputError.
+// RunSingleFile parses file, sends its requests in order and writes each
+// response to out. A failed request does not stop the ones after it; all
+// failures are returned joined. Read and parse failures are returned as
+// *InputError before anything is sent.
 func RunSingleFile(file string, r *Opts, out io.Writer) error {
-	req, err := request.ParseMonFile(file)
+	reqs, err := request.ParseMonFile(file)
 	if err != nil {
 		return &InputError{Err: err}
 	}
-	res, err := net.HTTPRequest(req, r.HeaderOnly)
-	if err != nil {
-		return fmt.Errorf("%s: %w", file, err)
+	var errs []error
+	for _, req := range reqs {
+		where := fmt.Sprintf("%s:%d", file, req.Line)
+		logging.Log.Info().Msgf("%s: %s", where, req.Label())
+		res, err := net.HTTPRequest(req, r.HeaderOnly)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %s: %w", where, req.Label(), err))
+			continue
+		}
+		if _, err := fmt.Fprintln(out, res); err != nil {
+			return err
+		}
 	}
-	_, err = fmt.Fprintln(out, res)
-	return err
+	return errors.Join(errs...)
 }

@@ -1,0 +1,4 @@
+GET http://example.com/ok
+
+### broken
+GET

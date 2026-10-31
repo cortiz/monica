@@ -15,25 +15,29 @@ func TestParseMonFile(t *testing.T) {
 	tests := []struct {
 		name    string
 		file    string
-		want    *request.Request
+		want    []*request.Request
 		wantErr string // substring of the error; empty means no error
 	}{
 		{
 			name: "simple GET",
 			file: "testdata/simple.mon",
-			want: &request.Request{
+			want: []*request.Request{{
+				File:   "testdata/simple.mon",
+				Line:   2,
 				Method: "GET",
 				URL:    "http://httpbin.org/status/200",
 				Headers: http.Header{
 					"Host":       {"httpbin.org"},
 					"User-Agent": {"monica/0.1.0"},
 				},
-			},
+			}},
 		},
 		{
 			name: "simple POST with JSON body",
 			file: "testdata/simple_post.mon",
-			want: &request.Request{
+			want: []*request.Request{{
+				File:   "testdata/simple_post.mon",
+				Line:   2,
 				Method: "POST",
 				URL:    "http://httpbin.org/anything",
 				Headers: http.Header{
@@ -41,12 +45,14 @@ func TestParseMonFile(t *testing.T) {
 					"User-Agent": {"monica/0.1.0"},
 				},
 				Body: "{\n  \"key\": \"value\"\n}\n",
-			},
+			}},
 		},
 		{
 			name: "header split on first colon only",
 			file: "testdata/header_colon_value.mon",
-			want: &request.Request{
+			want: []*request.Request{{
+				File:   "testdata/header_colon_value.mon",
+				Line:   2,
 				Method: "GET",
 				URL:    "http://example.com/",
 				Headers: http.Header{
@@ -54,39 +60,97 @@ func TestParseMonFile(t *testing.T) {
 					"X-Spaced":      {"padded value"},
 					"Authorization": {"Bearer abc:def"},
 				},
-			},
+			}},
 		},
 		{
 			name: "repeated headers survive",
 			file: "testdata/repeated_headers.mon",
-			want: &request.Request{
+			want: []*request.Request{{
+				File:   "testdata/repeated_headers.mon",
+				Line:   2,
 				Method: "GET",
 				URL:    "http://example.com/",
 				Headers: http.Header{
 					"Accept": {"text/html", "application/json"},
 					"Cookie": {"a=1", "b=2"},
 				},
-			},
+			}},
 		},
 		{
 			name: "body kept verbatim",
 			file: "testdata/body_exact.mon",
-			want: &request.Request{
+			want: []*request.Request{{
+				File:    "testdata/body_exact.mon",
+				Line:    2,
 				Method:  "POST",
 				URL:     "http://example.com/notes",
 				Headers: http.Header{"Content-Type": {"text/markdown"}},
 				Body:    "# Title\n\nline after blank\n\n",
-			},
+			}},
 		},
 		{
 			name: "request line with HTTP version",
 			file: "testdata/request_line_version.mon",
-			want: &request.Request{
+			want: []*request.Request{{
+				File:    "testdata/request_line_version.mon",
+				Line:    2,
 				Method:  "PUT",
 				URL:     "https://example.com/items/1",
 				Proto:   "HTTP/1.1",
 				Headers: http.Header{"Content-Type": {"application/json"}},
 				Body:    `{"id":1}`,
+			}},
+		},
+		{
+			name: "multiple requests with titles",
+			file: "testdata/multiple_requests.mon",
+			want: []*request.Request{
+				{
+					File:    "testdata/multiple_requests.mon",
+					Line:    3,
+					Title:   "List users",
+					Method:  "GET",
+					URL:     "http://example.com/users",
+					Headers: http.Header{"Accept": {"application/json"}},
+				},
+				{
+					File:    "testdata/multiple_requests.mon",
+					Line:    7,
+					Title:   "Create user",
+					Method:  "POST",
+					URL:     "http://example.com/users",
+					Headers: http.Header{"Content-Type": {"application/json"}},
+					Body:    "{\"name\":\"ada\"}\n",
+				},
+				{
+					File:    "testdata/multiple_requests.mon",
+					Line:    14,
+					Title:   "Delete user",
+					Method:  "DELETE",
+					URL:     "http://example.com/users/1",
+					Headers: http.Header{},
+				},
+			},
+		},
+		{
+			name: "empty sections are skipped",
+			file: "testdata/empty_sections.mon",
+			want: []*request.Request{
+				{
+					File:    "testdata/empty_sections.mon",
+					Line:    5,
+					Method:  "GET",
+					URL:     "http://example.com/a",
+					Headers: http.Header{},
+				},
+				{
+					File:    "testdata/empty_sections.mon",
+					Line:    9,
+					Method:  "GET",
+					URL:     "http://example.com/b",
+					Headers: http.Header{"X-A": {"1"}},
+					Body:    "# a body line, not a comment\n",
+				},
 			},
 		},
 		{
@@ -98,6 +162,11 @@ func TestParseMonFile(t *testing.T) {
 			name:    "request line without URL",
 			file:    "testdata/bad_request_line.mon",
 			wantErr: "testdata/bad_request_line.mon:3: invalid request line",
+		},
+		{
+			name:    "error in a later request reports its line",
+			file:    "testdata/multi_request_error.mon",
+			wantErr: "testdata/multi_request_error.mon:4: invalid request line",
 		},
 		{
 			name:    "invalid method",
@@ -137,7 +206,7 @@ func TestParseMonFile(t *testing.T) {
 func TestParseMonFileMissingFile(t *testing.T) {
 	req, err := request.ParseMonFile("testdata/does_not_exist.mon")
 	if err == nil {
-		t.Fatalf("expected error, got request %+v", req)
+		t.Fatalf("expected error, got requests %+v", req)
 	}
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("expected fs.ErrNotExist, got %v", err)
@@ -148,16 +217,23 @@ func TestParseMonFileMissingFile(t *testing.T) {
 }
 
 func TestParseRequest(t *testing.T) {
+	// one builds the expected result for a single request on line 1.
+	one := func(r request.Request) []*request.Request {
+		if r.Line == 0 {
+			r.Line = 1
+		}
+		return []*request.Request{&r}
+	}
 	tests := []struct {
 		name    string
 		raw     string
-		want    *request.Request
+		want    []*request.Request
 		wantErr string
 	}{
 		{
 			name: "headers and multi-line body",
 			raw:  "GET https://www.google.com HTTP/1.1\nHost: www.google.com\nUser-Agent: monica/0.1.0\n\nmulti\nline\nbody\n",
-			want: &request.Request{
+			want: one(request.Request{
 				Method: "GET",
 				URL:    "https://www.google.com",
 				Proto:  "HTTP/1.1",
@@ -166,40 +242,67 @@ func TestParseRequest(t *testing.T) {
 					"User-Agent": {"monica/0.1.0"},
 				},
 				Body: "multi\nline\nbody\n",
-			},
+			}),
 		},
 		{
 			name: "CRLF line endings",
 			raw:  "POST http://example.com/ HTTP/1.1\r\nX-A: 1\r\n\r\nbody\r\n",
-			want: &request.Request{
+			want: one(request.Request{
 				Method:  "POST",
 				URL:     "http://example.com/",
 				Proto:   "HTTP/1.1",
 				Headers: http.Header{"X-A": {"1"}},
 				Body:    "body\r\n",
-			},
+			}),
 		},
 		{
 			name: "no headers, no trailing newline",
 			raw:  "DELETE http://example.com/x",
-			want: &request.Request{Method: "DELETE", URL: "http://example.com/x", Headers: http.Header{}},
+			want: one(request.Request{Method: "DELETE", URL: "http://example.com/x", Headers: http.Header{}}),
 		},
 		{
 			name: "comments and blank lines before request line, comment among headers",
 			raw:  "\n# a\n\nGET http://example.com/\n# skipped\nX-A: 1\n",
-			want: &request.Request{Method: "GET", URL: "http://example.com/", Headers: http.Header{"X-A": {"1"}}},
+			want: one(request.Request{Line: 4, Method: "GET", URL: "http://example.com/", Headers: http.Header{"X-A": {"1"}}}),
 		},
 		{
 			name: "lowercase header names are canonicalized",
 			raw:  "GET http://example.com/\ncontent-type: text/plain\n",
-			want: &request.Request{Method: "GET", URL: "http://example.com/", Headers: http.Header{"Content-Type": {"text/plain"}}},
+			want: one(request.Request{Method: "GET", URL: "http://example.com/", Headers: http.Header{"Content-Type": {"text/plain"}}}),
 		},
 		{
 			name: "empty header value",
 			raw:  "GET http://example.com/\nX-Empty:\n",
-			want: &request.Request{Method: "GET", URL: "http://example.com/", Headers: http.Header{"X-Empty": {""}}},
+			want: one(request.Request{Method: "GET", URL: "http://example.com/", Headers: http.Header{"X-Empty": {""}}}),
+		},
+		{
+			name: "separator ends headers without a body",
+			raw:  "GET http://a.example/\nX-A: 1\n###\nGET http://b.example/\n",
+			want: []*request.Request{
+				{Line: 1, Method: "GET", URL: "http://a.example/", Headers: http.Header{"X-A": {"1"}}},
+				{Line: 4, Method: "GET", URL: "http://b.example/", Headers: http.Header{}},
+			},
+		},
+		{
+			name: "separator trims trailing blank lines of the body, CRLF",
+			raw:  "POST http://a.example/\r\n\r\nbody\r\n\r\n \r\n### next\r\nGET http://b.example/\r\n",
+			want: []*request.Request{
+				{Line: 1, Method: "POST", URL: "http://a.example/", Headers: http.Header{}, Body: "body\r\n"},
+				{Line: 7, Title: "next", Method: "GET", URL: "http://b.example/", Headers: http.Header{}},
+			},
+		},
+		{
+			name: "title text is trimmed, extra hashes allowed",
+			raw:  "####   Spaced title  \nGET http://a.example/\n",
+			want: one(request.Request{Line: 2, Title: "Spaced title", Method: "GET", URL: "http://a.example/", Headers: http.Header{}}),
+		},
+		{
+			name: "title does not leak into an untitled section",
+			raw:  "### first\n###\nGET http://a.example/\n",
+			want: one(request.Request{Line: 3, Method: "GET", URL: "http://a.example/", Headers: http.Header{}}),
 		},
 		{name: "empty input", raw: "", wantErr: "missing request line"},
+		{name: "only separators", raw: "###\n### title\n", wantErr: "missing request line"},
 		{name: "request line without URL", raw: "# comment\nGET\n", wantErr: "line 2: invalid request line"},
 		{name: "too many request line parts", raw: "GET http://example.com/ HTTP/1.1 extra\n", wantErr: "line 1: invalid request line"},
 		{name: "URL without host", raw: "GET http:///path\n", wantErr: "missing host"},
@@ -215,11 +318,26 @@ func TestParseRequest(t *testing.T) {
 	}
 }
 
-func checkResult(t *testing.T, got *request.Request, err error, want *request.Request, wantErr string) {
+func TestLabel(t *testing.T) {
+	tests := []struct {
+		req  request.Request
+		want string
+	}{
+		{request.Request{Method: "GET", URL: "http://a.example/"}, "GET http://a.example/"},
+		{request.Request{Title: "List users", Method: "GET", URL: "http://a.example/"}, "List users"},
+	}
+	for _, tt := range tests {
+		if got := tt.req.Label(); got != tt.want {
+			t.Errorf("Label() = %q, want %q", got, tt.want)
+		}
+	}
+}
+
+func checkResult(t *testing.T, got []*request.Request, err error, want []*request.Request, wantErr string) {
 	t.Helper()
 	if wantErr != "" {
 		if err == nil {
-			t.Fatalf("expected error containing %q, got request %+v", wantErr, got)
+			t.Fatalf("expected error containing %q, got requests %+v", wantErr, got)
 		}
 		if !strings.Contains(err.Error(), wantErr) {
 			t.Fatalf("error %q does not contain %q", err, wantErr)
@@ -229,7 +347,12 @@ func checkResult(t *testing.T, got *request.Request, err error, want *request.Re
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("got  %#v\nwant %#v", got, want)
+	if len(got) != len(want) {
+		t.Fatalf("got %d requests, want %d: %+v", len(got), len(want), got)
+	}
+	for i := range want {
+		if !reflect.DeepEqual(got[i], want[i]) {
+			t.Fatalf("request %d:\ngot  %#v\nwant %#v", i, got[i], want[i])
+		}
 	}
 }
