@@ -192,6 +192,21 @@ func TestParseMonFile(t *testing.T) {
 			},
 		},
 		{
+			name: "retry directive",
+			file: "testdata/retry.mon",
+			want: []*request.Request{
+				{
+					File: "testdata/retry.mon", Line: 4, Title: "Flaky upstream", Name: "flaky",
+					Retries: 3, RetryDelay: 250 * time.Millisecond,
+					Method: "GET", URL: "http://example.com/flaky", Headers: http.Header{},
+				},
+				{
+					File: "testdata/retry.mon", Line: 8, Retries: 1,
+					Method: "GET", URL: "http://example.com/once", Headers: http.Header{},
+				},
+			},
+		},
+		{
 			name: "body from file",
 			file: "testdata/body_file.mon",
 			want: []*request.Request{
@@ -505,7 +520,15 @@ func TestParseRequest(t *testing.T) {
 		{name: "text after the post-response script", raw: "GET http://a.example/\n> {% a %}\nX-A: 1\n", wantErr: "line 3: unexpected text after the post-response script"},
 		{name: "pre-request script without a request", raw: "< {% a %}\n###\nGET http://a.example/\n", wantErr: "line 1: pre-request script without a request"},
 		{name: "unterminated pre-request script", raw: "< {%\na()\n", wantErr: "line 1: unterminated pre-request script"},
-		{name: "unknown directive", raw: "# @retry 3\nGET http://a.example/\n", wantErr: "line 1: unknown directive @retry"},
+		{name: "unknown directive", raw: "# @retries 3\nGET http://a.example/\n", wantErr: "line 1: unknown directive @retries (known: @name, @timeout, @skip, @retry)"},
+		{name: "retry without count", raw: "# @retry\nGET http://a.example/\n", wantErr: "line 1: invalid @retry \"\" (expected a retry count"},
+		{name: "retry zero", raw: "# @retry 0\nGET http://a.example/\n", wantErr: "line 1: invalid @retry \"0\" (count must be a whole number from 1 to 100)"},
+		{name: "retry too many", raw: "# @retry 101\nGET http://a.example/\n", wantErr: "count must be a whole number from 1 to 100"},
+		{name: "retry not a number", raw: "# @retry three\nGET http://a.example/\n", wantErr: "count must be a whole number"},
+		{name: "retry bad delay", raw: "# @retry 3 soon\nGET http://a.example/\n", wantErr: "line 1: invalid @retry \"3 soon\" (delay must be a duration"},
+		{name: "retry negative delay", raw: "# @retry 3 -1s\nGET http://a.example/\n", wantErr: "delay must be a duration"},
+		{name: "retry extra field", raw: "# @retry 3 1s 2s\nGET http://a.example/\n", wantErr: "expected a retry count and an optional delay"},
+		{name: "repeated retry", raw: "# @retry 1\n# @retry 2\nGET http://a.example/\n", wantErr: "line 2: duplicate @retry"},
 		{name: "empty directive", raw: "# @\nGET http://a.example/\n", wantErr: "line 1: empty directive"},
 		{name: "missing name", raw: "# @name\nGET http://a.example/\n", wantErr: "line 1: invalid @name \"\""},
 		{name: "name starting with digit", raw: "# @name 1st\nGET http://a.example/\n", wantErr: "line 1: invalid @name \"1st\""},
