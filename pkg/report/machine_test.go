@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"encoding/xml"
+	"strings"
 	"testing"
 	"time"
 )
@@ -95,5 +96,44 @@ func TestJUnit(t *testing.T) {
 	var v any
 	if err := xml.Unmarshal(buf.Bytes(), &v); err != nil {
 		t.Fatalf("not well-formed XML: %v", err)
+	}
+}
+
+func TestReportsNameDataRow(t *testing.T) {
+	r := Request{File: "api.mon", Line: 3, Name: "login", Method: "GET", URL: "http://x/", Status: 200, StatusText: "OK", Iteration: 2}
+
+	var console bytes.Buffer
+	c := NewConsole(&console)
+	c.Request(r)
+	if !strings.Contains(console.String(), "(api.mon:3, row 2)") {
+		t.Errorf("console: %q", console.String())
+	}
+
+	var js bytes.Buffer
+	j := NewJSON(&js)
+	j.Request(r)
+	if err := j.Done(Summarize([]Request{r}, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(js.String(), `"iteration": 2`) && !strings.Contains(js.String(), `"iteration":2`) {
+		t.Errorf("json: %s", js.String())
+	}
+
+	var junitOut bytes.Buffer
+	ju := NewJUnit(&junitOut)
+	ju.Request(r)
+	if err := ju.Done(Summarize([]Request{r}, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(junitOut.String(), `classname="api.mon:3 login [row 2]"`) {
+		t.Errorf("junit: %s", junitOut.String())
+	}
+
+	// Without --data nothing changes.
+	r.Iteration = 0
+	console.Reset()
+	c.Request(r)
+	if strings.Contains(console.String(), "row") {
+		t.Errorf("console without data: %q", console.String())
 	}
 }

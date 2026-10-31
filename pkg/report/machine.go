@@ -99,7 +99,7 @@ func seconds(d time.Duration) string { return fmt.Sprintf("%.3f", d.Seconds()) }
 
 // cases turns one request into testcases.
 func (r Request) cases() []junitCase {
-	base := junitCase{Classname: fmt.Sprintf("%s:%d %s", r.File, r.Line, r.Name), Time: seconds(r.Duration)}
+	base := junitCase{Classname: fmt.Sprintf("%s:%d %s%s", r.File, r.Line, r.Name, r.rowSuffix()), Time: seconds(r.Duration)}
 	switch {
 	case r.Skipped:
 		c := base
