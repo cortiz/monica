@@ -18,3 +18,7 @@ commit.txt
 version.txt
 dist/
 .idea/
+
+# Claude Code personal overrides
+.claude/settings.local.json
+.claude/worktrees/
