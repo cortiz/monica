@@ -300,3 +300,29 @@ func TestRunControlFlags(t *testing.T) {
 		})
 	}
 }
+
+func TestRunOrder(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.URL.Path)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "auth"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeMon(t, dir, "monica.yml", "version: 1\norder: [auth/login.mon]\n")
+	writeMon(t, dir, "a.mon", "GET "+srv.URL+"/a1\n\n###\nGET "+srv.URL+"/a2\n")
+	writeMon(t, dir, "b.mon", "GET "+srv.URL+"/b\n")
+	writeMon(t, dir, "auth/login.mon", "GET "+srv.URL+"/login\n")
+	writeMon(t, dir, "auth/me.mon", "GET "+srv.URL+"/me\n")
+	chdir(t, dir)
+	if code, _, stderr := runCLI(t, "run", "-r", "2"); code != ExitOK {
+		t.Fatalf("exit code %d: %s", code, stderr)
+	}
+	want := []string{"/login", "/a1", "/a2", "/me", "/b"} // a.mon < auth/
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("run order %v, want %v", got, want)
+	}
+}

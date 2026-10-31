@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -25,6 +27,10 @@ type Config struct {
 	Envs     map[string]Settings `yaml:"envs"`
 	Scripts  Scripts             `yaml:"scripts"`
 	Load     LoadSettings        `yaml:"load"`
+	// Order lists .mon files and folders (relative to the config's folder)
+	// that `monica run` runs first, in this order; other files follow in
+	// path order.
+	Order []string `yaml:"order"`
 
 	// Path is the file the config was read from.
 	Path string `yaml:"-"`
@@ -136,8 +142,32 @@ func (c *Config) validate(requireVersion bool) error {
 			return err
 		}
 	}
+	if err := validateOrder(c.Order); err != nil {
+		return err
+	}
 	if c.Load.VUs < 0 {
 		return fmt.Errorf("load.vus: must not be negative, got %d", c.Load.VUs)
+	}
+	return nil
+}
+
+// validateOrder checks that order entries are distinct relative paths
+// inside the config's folder.
+func validateOrder(order []string) error {
+	seen := map[string]bool{}
+	for _, entry := range order {
+		clean := path.Clean(filepath.ToSlash(entry))
+		switch {
+		case strings.TrimSpace(entry) == "":
+			return errors.New("order: empty entry")
+		case path.IsAbs(clean) || filepath.IsAbs(entry) || filepath.VolumeName(entry) != "":
+			return fmt.Errorf("order: %q must be relative to the config's folder", entry)
+		case clean == ".." || strings.HasPrefix(clean, "../"):
+			return fmt.Errorf("order: %q is outside the config's folder", entry)
+		case seen[clean]:
+			return fmt.Errorf("order: duplicate entry %q", entry)
+		}
+		seen[clean] = true
 	}
 	return nil
 }

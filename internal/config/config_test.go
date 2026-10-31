@@ -47,6 +47,7 @@ func TestLoadFull(t *testing.T) {
 		},
 		Scripts: Scripts{Timeout: dur(2 * time.Second), Paths: []string{"./lib"}},
 		Load:    LoadSettings{VUs: 50, Duration: dur(30 * time.Second), Thresholds: []string{"p95<300ms", "errors<1%"}},
+		Order:   []string{"auth/login.mon", "users"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got  %+v\nwant %+v", got, want)
@@ -72,6 +73,12 @@ func TestLoadErrors(t *testing.T) {
 		{"invalid env name", "version: 1\nenvs:\n  \"my env\": {}\n", "envs: invalid environment name \"my env\""},
 		{"negative vus", "version: 1\nload:\n  vus: -1\n", "load.vus: must not be negative"},
 		{"not yaml", "version: [1\n", "monica.yml"},
+		{"order not a list", "version: 1\norder: a.mon\n", "line 2"},
+		{"empty order entry", "version: 1\norder: [\"\"]\n", "order: empty entry"},
+		{"absolute order entry", "version: 1\norder: [/etc/a.mon]\n", "order: \"/etc/a.mon\" must be relative"},
+		{"order entry outside", "version: 1\norder: [../a.mon]\n", "order: \"../a.mon\" is outside"},
+		{"order entry outside after clean", "version: 1\norder: [a/../../b]\n", "is outside"},
+		{"duplicate order entry", "version: 1\norder: [users, ./users/]\n", "order: duplicate entry \"./users/\""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -147,6 +147,7 @@ func runAllFiles(r *runner.Runner, level int) error {
 	if err != nil {
 		return &exitError{code: ExitUsage, err: fmt.Errorf("finding mon files: %w", err)}
 	}
+	files = r.Order(files)
 	logging.Log.Info().Msgf("Found %d mon files", len(files))
 	worst, failed := ExitOK, 0
 	for _, file := range files {
