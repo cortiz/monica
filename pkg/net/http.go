@@ -1,6 +1,8 @@
 package net
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -10,10 +12,12 @@ import (
 )
 
 func HTTPRequest(request *request.Request, headerOnly bool) (*HTTPResponse, error) {
+	if request == nil {
+		return nil, errors.New("nil request")
+	}
 	req, err := http.NewRequest(request.Method, request.URL, strings.NewReader(request.Body))
 	if err != nil {
-		logging.Log.Error().Err(err).Msg("Failed to create HTTP request")
-		return nil, err
+		return nil, fmt.Errorf("creating HTTP request: %w", err)
 	}
 	for k, v := range request.Headers {
 		req.Header.Add(k, v)
@@ -22,8 +26,7 @@ func HTTPRequest(request *request.Request, headerOnly bool) (*HTTPResponse, erro
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		logging.Log.Error().Err(err).Msg("Failed to send HTTP request")
-		return nil, err
+		return nil, fmt.Errorf("sending HTTP request: %w", err)
 	}
 	return parseHTTPResponse(resp, headerOnly)
 }
@@ -43,8 +46,7 @@ func parseHTTPResponse(resp *http.Response, headerOnly bool) (*HTTPResponse, err
 		}(resp.Body)
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
-			logging.Log.Error().Err(err).Msg("Failed to read response body")
-			return nil, err
+			return nil, fmt.Errorf("reading response body: %w", err)
 		}
 		response.Body = string(bodyBytes)
 	}

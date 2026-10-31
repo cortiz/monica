@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,12 +20,14 @@ var (
 		Use:   "run",
 		Short: "Runs all mon files",
 		Long:  "Runs all mon files found in the current working directory",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Flags parsed fine; from here on failures are not usage problems.
+			cmd.SilenceUsage = true
+			opts := &runner.Opts{HeaderOnly: false}
 			if singleFile != "" {
-				runSingleFile(singleFile)
-			} else {
-				runAllFiles(recursiveLevel)
+				return runSingleFile(singleFile, opts, cmd.OutOrStdout())
 			}
+			return runAllFiles(recursiveLevel, opts, cmd.OutOrStdout())
 		},
 	}
 )
@@ -32,24 +37,44 @@ func init() {
 	run.Flags().IntVarP(&recursiveLevel, "recursive", "r", 1, "runs all mon files in the current working directory and subdirectories up to the specified level")
 }
 
-func runSingleFile(file string) {
-	runner.RunSingleFile(file, &runner.Opts{
-		HeaderOnly: false,
-	})
+func runSingleFile(file string, opts *runner.Opts, out io.Writer) error {
+	if err := runner.RunSingleFile(file, opts, out); err != nil {
+		return classify(err)
+	}
+	return nil
 }
 
-func runAllFiles(level int) {
+// runAllFiles runs every .mon file, continuing past failures, and returns an
+// error carrying the most severe exit code seen.
+func runAllFiles(level int, opts *runner.Opts, out io.Writer) error {
 	files, err := FindMonFiles(".", level)
-	logging.Log.Info().Msgf("Found %d mon files", len(files))
 	if err != nil {
-		logging.Log.Error().Err(err).Msg("Error finding mon files")
-		os.Exit(1)
+		return &exitError{code: ExitUsage, err: fmt.Errorf("finding mon files: %w", err)}
 	}
+	logging.Log.Info().Msgf("Found %d mon files", len(files))
+	worst, failed := ExitOK, 0
 	for _, file := range files {
-		runner.RunSingleFile(file, &runner.Opts{
-			HeaderOnly: false,
-		})
+		if err := runner.RunSingleFile(file, opts, out); err != nil {
+			failed++
+			logging.Log.Error().Msg(err.Error())
+			if code := exitCode(classify(err)); code > worst {
+				worst = code
+			}
+		}
 	}
+	if failed > 0 {
+		return &exitError{code: worst, err: fmt.Errorf("%d of %d mon files failed", failed, len(files))}
+	}
+	return nil
+}
+
+// classify wraps a runner error with the exit code it should produce.
+func classify(err error) error {
+	var ie *runner.InputError
+	if errors.As(err, &ie) {
+		return &exitError{code: ExitUsage, err: err}
+	}
+	return &exitError{code: ExitFailed, err: err}
 }
 
 func FindMonFiles(root string, maxDepth int) ([]string, error) {
