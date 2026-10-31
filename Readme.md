@@ -114,8 +114,24 @@ monica load -u 5 -i 1000 -s checkout.mon # 1000 iterations shared by 5 VUs
 monica load: 10 VUs, 30s
 iterations  1234 completed (41.1/s), 2 interrupted
 requests    2468 (82.2/s), 3 failed (0.12%)
+data        1.2 MB received, 48.0 kB sent
 duration    30.02s
+
+request  reqs  failed  rps   min     avg     p50     p90     p95     p99     max
+login    1234  0       41.1  8.10ms  12.4ms  11.9ms  16.2ms  18.0ms  24.5ms  61.3ms
+users    1234  3       41.1  2.05ms  4.31ms  3.98ms  6.10ms  7.02ms  11.8ms  40.2ms
+all      2468  3       82.2  2.05ms  8.36ms  7.40ms  14.9ms  16.8ms  22.1ms  61.3ms
+phases (avg / p95)  dns 0 / 0 · connect 95µs / 410µs · tls 0 / 0 · waiting 7.90ms / 16.1ms · receiving 310µs / 920µs
 ```
+
+* **Metrics** — one row per request (by file and line, named by its `@name`, title or
+  `METHOD URL`) and an `all` row: count, failures, requests per second and the request time
+  (send until the body is read) as min, average, p50/p90/p95/p99 and max. Percentiles come
+  from a histogram with under 1.6% error; min, max and average are exact. `phases` breaks
+  the time down: DNS lookup, TCP connect and TLS handshake (zero on a kept-alive connection),
+  waiting (request sent → first response byte) and receiving (the body). `data` counts
+  request and response bodies. Requests that got no response (e.g. connection refused) count
+  as requests and failures but not in the timings; requests aborted by the stop are left out.
 
 * **Iteration** — one pass over every selected file in [run order](#run-order) (`-s`, `-r`
   and `--filter` work as for `monica run`; `-e`, `--var` and `-c` too). Each VU has its own

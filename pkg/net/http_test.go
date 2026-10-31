@@ -273,3 +273,60 @@ func TestClientInsecureSkipVerify(t *testing.T) {
 		t.Fatalf("body = %q", res.Body)
 	}
 }
+
+func TestTimings(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(50 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		time.Sleep(30 * time.Millisecond)
+		_, _ = w.Write([]byte("hello"))
+	})
+	tests := []struct {
+		name    string
+		tls     bool
+		wantTLS bool
+	}{
+		{"http", false, false},
+		{"https", true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var srv *httptest.Server
+			if tt.tls {
+				srv = httptest.NewTLSServer(handler)
+			} else {
+				srv = httptest.NewServer(handler)
+			}
+			defer srv.Close()
+			c := net.NewClient(net.Options{InsecureSkipVerify: tt.tls})
+			req := &request.Request{Method: "POST", URL: srv.URL + "/", Headers: http.Header{}, Body: "abc"}
+
+			first, err := c.Do(req, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tm := first.Timings
+			if tm.Reused || tm.Connect <= 0 || (tm.TLS > 0) != tt.wantTLS {
+				t.Errorf("first request: %+v", tm)
+			}
+			if tm.Waiting < 50*time.Millisecond || tm.Receiving < 30*time.Millisecond {
+				t.Errorf("waiting/receiving too short: %+v", tm)
+			}
+			if sum := tm.DNS + tm.Connect + tm.TLS + tm.Waiting + tm.Receiving; sum > first.Duration+time.Millisecond {
+				t.Errorf("phases %s exceed duration %s", sum, first.Duration)
+			}
+			if first.BytesSent != 3 || first.BytesReceived != 5 {
+				t.Errorf("bytes sent/received = %d/%d, want 3/5", first.BytesSent, first.BytesReceived)
+			}
+
+			second, err := c.Do(req, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tm := second.Timings; !tm.Reused || tm.DNS != 0 || tm.Connect != 0 || tm.TLS != 0 {
+				t.Errorf("second request should reuse the connection: %+v", tm)
+			}
+		})
+	}
+}

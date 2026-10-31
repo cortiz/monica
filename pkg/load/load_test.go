@@ -168,6 +168,17 @@ func TestRunCountsFailures(t *testing.T) {
 	if res.Requests != 8 || res.Failed != 4 || res.Iterations != 4 {
 		t.Fatalf("result = %+v", res)
 	}
+	if len(res.Stats) != 2 || res.Stats[0].Line != 1 || res.Stats[0].Failed != 4 || res.Stats[1].Failed != 0 {
+		t.Fatalf("stats = %+v", res.Stats)
+	}
+	for _, st := range res.Stats {
+		if st.Requests != 4 || st.Duration.Count() != 4 || st.Duration.Max() <= 0 || st.Waiting.Count() != 4 {
+			t.Fatalf("%s: requests %d, timed %d, max %s", st.Name, st.Requests, st.Duration.Count(), st.Duration.Max())
+		}
+	}
+	if res.Total.Requests != 8 || res.Total.Connect.Count() != 8 {
+		t.Fatalf("total = %+v", res.Total)
+	}
 }
 
 func TestRunInputErrorAborts(t *testing.T) {

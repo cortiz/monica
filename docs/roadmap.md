@@ -244,6 +244,9 @@ errors abort with exit 2; Ctrl-C prints the summary (exit 1). Plain counts only 
 **7.2 Metrics** — per request name: count, errors, min/avg/p50/p90/p95/p99/max, RPS,
 bytes; `httptrace` timings (DNS, connect, TLS, TTFB). Stdlib-only histogram
 (HDR-style buckets) — no dependency.
+✅ Done: per request (file:line) and total; log-linear histogram (64 buckets per power of
+two, <1.6% error, mergeable — one per VU, merged at the end); phases DNS / connect / TLS /
+waiting / receiving; body bytes sent/received. Summary table on stdout (JSON in 7.5).
 
 **7.3 Thresholds** — from `load.thresholds` or `--threshold "p95<300ms"`; failing → exit 1.
 

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"jmpeax.com/sec/monica/pkg/net"
 	"jmpeax.com/sec/monica/pkg/script"
 )
 
@@ -36,6 +37,10 @@ type Request struct {
 	Tests []script.TestResult `json:"tests,omitempty"`
 	// Response is the printable response (status line, headers, body).
 	Response string `json:"-"`
+	// Timings, BytesSent and BytesReceived describe the exchange, for load
+	// metrics; zero when nothing was received.
+	Timings                  net.Timings `json:"-"`
+	BytesSent, BytesReceived int64       `json:"-"`
 }
 
 // rowSuffix is " [row N]" for a --data iteration, else "".

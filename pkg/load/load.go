@@ -50,6 +50,10 @@ type Result struct {
 	// Requests that ran (skipped ones excluded), and how many failed.
 	Requests, Failed int64
 	Duration         time.Duration
+	// Stats has one entry per request (file and line order); Total sums
+	// them. Requests aborted by the stop are not included.
+	Stats []Stat
+	Total Stat
 }
 
 func (o *Options) validate() error {
@@ -90,7 +94,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		defer t2.Stop()
 	}
 
-	t := &test{opts: opts, hard: hardCtx}
+	t := &test{opts: opts, hard: hardCtx, vuMetrics: make([]metrics, opts.VUs)}
 	var abortOnce sync.Once
 	abort := func(err error) {
 		abortOnce.Do(func() {
@@ -110,14 +114,18 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 	wg.Wait()
 
+	all := metrics{}
+	for _, m := range t.vuMetrics {
+		all.merge(m)
+	}
 	res := Result{
 		VUs:         opts.VUs,
 		Iterations:  t.iterations.Load(),
 		Interrupted: t.interrupted.Load(),
-		Requests:    t.requests.Load(),
-		Failed:      t.failed.Load(),
 		Duration:    time.Since(start),
 	}
+	res.Stats, res.Total = all.stats()
+	res.Requests, res.Failed = int64(res.Total.Requests), int64(res.Total.Failed)
 	if t.inputErr != nil {
 		return res, t.inputErr
 	}
@@ -131,7 +139,7 @@ type test struct {
 
 	claimed                 atomic.Int64 // iterations started (with Iterations)
 	iterations, interrupted atomic.Int64
-	requests, failed        atomic.Int64
+	vuMetrics               []metrics // by VU - 1; each written only by its VU
 }
 
 // runVU loops over the files with its own runner (own script runtimes and
@@ -139,7 +147,8 @@ type test struct {
 func (t *test) runVU(vu int, iterCtx context.Context, abort func(error)) {
 	ropts := t.opts.Run
 	ropts.Context, ropts.NoSummary, ropts.VU = t.hard, true, vu
-	sk := &sink{t: t}
+	sk := &sink{t: t, m: metrics{}}
+	t.vuMetrics[vu-1] = sk.m
 	r := runner.NewWithReporter(&ropts, sk)
 	defer func() {
 		if err := r.AfterAll(); err != nil {
@@ -179,9 +188,10 @@ func (t *test) runVU(vu int, iterCtx context.Context, abort func(error)) {
 	}
 }
 
-// sink counts one VU's results into the test's totals.
+// sink collects one VU's results.
 type sink struct {
 	t   *test
+	m   metrics
 	ran bool // a request ran in the current iteration
 }
 
@@ -193,10 +203,7 @@ func (s *sink) Request(r report.Request) {
 	if r.Error != "" && s.t.hard.Err() != nil {
 		return // aborted by the stop, not a failure of the system under test
 	}
-	s.t.requests.Add(1)
-	if r.Failed() {
-		s.t.failed.Add(1)
-	}
+	s.m.record(r)
 }
 
 func (s *sink) Done(report.Summary) error { return nil }
@@ -225,7 +232,14 @@ func (r Result) Summary(opts Options) string {
 	if r.Requests > 0 {
 		fmt.Fprintf(&b, " (%.2f%%)", 100*float64(r.Failed)/float64(r.Requests))
 	}
+	if r.Total.BytesReceived > 0 || r.Total.BytesSent > 0 {
+		fmt.Fprintf(&b, "\ndata        %s received, %s sent", fmtBytes(r.Total.BytesReceived), fmtBytes(r.Total.BytesSent))
+	}
 	fmt.Fprintf(&b, "\nduration    %s\n", r.Duration.Round(10*time.Millisecond))
+	if r.Total.Requests > 0 {
+		b.WriteString("\n")
+		writeTable(&b, r.Stats, r.Total, r.Duration)
+	}
 	return b.String()
 }
 
