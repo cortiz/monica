@@ -46,7 +46,7 @@ func (c *Console) Request(r Request) {
 		mark = markFail
 	}
 	head := fmt.Sprintf("%s %s", mark, r.Name)
-	if req := r.Method + " " + r.URL; r.Name != req {
+	if req := r.Method + " " + r.URL; r.Method != "" && r.Name != req {
 		head += "  " + req
 	}
 	if r.Status > 0 {

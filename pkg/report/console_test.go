@@ -144,3 +144,12 @@ func TestMulti(t *testing.T) {
 		}
 	}
 }
+
+func TestConsoleFileFailure(t *testing.T) {
+	var buf bytes.Buffer
+	NewConsole(&buf).Request(Request{File: "bad.mon", Line: 2, Name: "bad.mon", Error: "bad.mon:2: invalid request line"})
+	want := "✗ bad.mon  (bad.mon:2)\n    ✗ bad.mon:2: invalid request line\n"
+	if buf.String() != want {
+		t.Fatalf("got %q, want %q", buf.String(), want)
+	}
+}
