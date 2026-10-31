@@ -1,0 +1,2 @@
+# URL needs an http(s) scheme and a host
+GET example.com/path

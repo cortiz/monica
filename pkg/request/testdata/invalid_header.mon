@@ -1,0 +1,3 @@
+# Header line without a colon
+GET http://example.com/
+Host example.com

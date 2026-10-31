@@ -1,0 +1,6 @@
+# Repeated headers keep every value in order
+GET http://example.com/
+Accept: text/html
+Accept: application/json
+cookie: a=1
+Cookie: b=2

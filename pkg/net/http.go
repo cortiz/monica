@@ -19,8 +19,10 @@ func HTTPRequest(request *request.Request, headerOnly bool) (*HTTPResponse, erro
 	if err != nil {
 		return nil, fmt.Errorf("creating HTTP request: %w", err)
 	}
-	for k, v := range request.Headers {
-		req.Header.Add(k, v)
+	for k, vs := range request.Headers {
+		for _, v := range vs {
+			req.Header.Add(k, v)
+		}
 	}
 	req.Header.Add("User-Agent", "Monica/0.1.0")
 	client := &http.Client{}
