@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -113,12 +114,22 @@ func (r *Runner) SetIteration(n int, row Row) {
 
 func (r *Runner) emit(res report.Request) {
 	res.Iteration = r.iteration
-	r.results = append(r.results, res)
+	if !r.opts.NoSummary {
+		r.results = append(r.results, res)
+	}
 	r.rep.Request(res)
 	if r.opts.Bail && res.Failed() && !r.bailed {
 		r.bailed = true
 		logging.Log.Warn().Msgf("%s:%d: stopping at the first failure (--bail)", res.File, res.Line)
 	}
+}
+
+// ctx is Opts.Context, or a context that is never done.
+func (r *Runner) ctx() context.Context {
+	if r.opts.Context != nil {
+		return r.opts.Context
+	}
+	return context.Background()
 }
 
 // Bailed reports whether --bail stopped the run; later RunFile calls do
@@ -172,6 +183,10 @@ func (r *Runner) RunFile(file string) error {
 	var errs []error
 	for _, req := range reqs {
 		if r.bailed {
+			break
+		}
+		if err := r.ctx().Err(); err != nil {
+			errs = append(errs, err)
 			break
 		}
 		if !r.selected(req) {
@@ -236,7 +251,7 @@ func (r *Runner) runRequest(file string, req *request.Request, p *project, chain
 		if n > 1 {
 			res.Attempts = n
 		}
-		if err == nil || n == attempts || !retryable(err) {
+		if err == nil || n == attempts || !retryable(err) || r.ctx().Err() != nil {
 			return res, err
 		}
 		msg := fmt.Sprintf("%s: %s: attempt %d of %d failed; retrying", where, req.Label(), n, attempts)
@@ -244,7 +259,11 @@ func (r *Runner) runRequest(file string, req *request.Request, p *project, chain
 			msg += " in " + req.RetryDelay.String()
 		}
 		logging.Log.Warn().Msg(msg)
-		time.Sleep(req.RetryDelay)
+		select {
+		case <-time.After(req.RetryDelay):
+		case <-r.ctx().Done():
+			return res, err
+		}
 	}
 }
 
@@ -315,7 +334,7 @@ func (r *Runner) attempt(file, where string, req *request.Request, p *project, c
 		return out, &InputError{Err: p.mask.Error(err)}
 	}
 	out.Method, out.URL = rendered.Method, p.mask.String(rendered.URL)
-	res, err := p.client.Do(rendered, r.opts.HeaderOnly)
+	res, err := p.client.DoContext(r.ctx(), rendered, r.opts.HeaderOnly)
 	if err != nil {
 		return fail("", err)
 	}

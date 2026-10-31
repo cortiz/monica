@@ -66,6 +66,11 @@ func HTTPRequest(request *request.Request, headerOnly bool) (*HTTPResponse, erro
 // Do sends request and returns its response. With headerOnly the body is
 // discarded.
 func (c *Client) Do(request *request.Request, headerOnly bool) (*HTTPResponse, error) {
+	return c.DoContext(context.Background(), request, headerOnly)
+}
+
+// DoContext is Do with a context: cancelling ctx aborts the request.
+func (c *Client) DoContext(ctx context.Context, request *request.Request, headerOnly bool) (*HTTPResponse, error) {
 	if request == nil {
 		return nil, errors.New("nil request")
 	}
@@ -73,7 +78,6 @@ func (c *Client) Do(request *request.Request, headerOnly bool) (*HTTPResponse, e
 	if request.Timeout > 0 {
 		timeout = request.Timeout
 	}
-	ctx := context.Background()
 	if timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)

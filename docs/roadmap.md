@@ -237,6 +237,9 @@ script/hook errors and failed tests (not input errors); only the last attempt is
 
 **7.1 Executor** — each VU = goroutine + own goja runtime + own vars; loops over the
 collection. Graceful stop on duration / Ctrl-C (context cancel).
+✅ Done: `monica load --vus/--duration/--iterations/--graceful-stop`, defaults from
+`load:`; one `runner.Runner` per VU (vars, hooks, `monica.vu`); shared iterations; input
+errors abort with exit 2; Ctrl-C prints the summary (exit 1). Plain counts only until 7.2.
 
 **7.2 Metrics** — per request name: count, errors, min/avg/p50/p90/p95/p99/max, RPS,
 bytes; `httptrace` timings (DNS, connect, TLS, TTFB). Stdlib-only histogram
