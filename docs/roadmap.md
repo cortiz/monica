@@ -173,7 +173,7 @@ Matchers: `toBe, toEqual (deep), toContain, toMatch, toBeLessThan/GreaterThan, t
 
 ---
 
-## Phase 5 — Modules & code reuse 🔒 `github.com/dop251/goja_nodejs`
+## Phase 5 — Modules & code reuse `github.com/dop251/goja_nodejs` ✅ done (5.5 deferred)
 
 | ID | Task | Size |
 |----|------|------|
@@ -193,8 +193,11 @@ Compiled modules cached and shared across runtimes.
 `monica/random` (uuid, int, string), `monica/jsonpath`.
 
 **5.4** `monica.js` in a folder exports `beforeAll/beforeEach/afterEach/afterAll`.
+Applies to the folder and below, up to the project root; `beforeAll` runs lazily before the
+folder's first executed request, `afterAll` at the end of the run (see Readme).
 
 **5.5** Only if needed: embed `github.com/evanw/esbuild/pkg/api` to transpile ESM/TS on load.
+Deferred: not needed yet (UMD/CJS packages cover the common libraries); revisit on demand.
 
 ---
 
@@ -307,7 +310,7 @@ so each source only implements parsing.
 |------------|-------|--------|
 | `gopkg.in/yaml.v3` | 2 | ✅ direct |
 | `github.com/dop251/goja` | 3 | ✅ approved, pinned to 2025-06-30 (Go 1.22 compatible) |
-| `github.com/dop251/goja_nodejs` | 5 | 🔒 needs approval |
+| `github.com/dop251/goja_nodejs` | 5 | ✅ approved (2026-09-18 commit; needs goja ≥ 2025-03) |
 | `github.com/evanw/esbuild` | 5.5 | 🔒 optional |
 | `github.com/charmbracelet/bubbletea`, `bubbles`, `lipgloss` | 9.1 | 🔒 needs approval |
 
@@ -315,7 +318,7 @@ Postman and Bruno import need no new dependencies (stdlib JSON + hand-written `.
 
 ## Suggested order
 
-`0.x → 1.x → 2.x → 3.x → 4.x` (done) `→ 5.x → 6.x → 7.x → 8.x`
+`0.x → 1.x → 2.x → 3.x → 4.x → 5.x` (done) `→ 6.x → 7.x → 8.x`
 
 1.3 landed before Phase 2 as parse-only; revisit the script syntax in 3.x if the engine
 needs changes (e.g. `%}` inside code).
