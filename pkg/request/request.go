@@ -27,8 +27,11 @@ type Request struct {
 	Proto string
 	// Headers keeps every value of repeated headers; keys are canonicalized.
 	Headers http.Header
-	// Body is everything after the blank line that ends the headers.
+	// Body is everything after the blank line that ends the headers, or the
+	// contents of BodyFile when the body is a "< path" line.
 	Body string
+	// BodyFile is the resolved path of a "< path" body, or empty.
+	BodyFile string
 }
 
 func (r Request) String() string {

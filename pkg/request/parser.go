@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -17,7 +18,10 @@ type ParseError struct {
 	File string // empty when parsing a raw string
 	Line int    // 1-based; 0 when the error is not tied to a line
 	Msg  string
+	Err  error // underlying cause, if any (e.g. a body file that can't be read)
 }
+
+func (e *ParseError) Unwrap() error { return e.Err }
 
 func (e *ParseError) Error() string {
 	switch {
@@ -65,10 +69,11 @@ type parser struct {
 	names map[string]int // request name -> line of its @name
 
 	// Current section.
-	title string
-	meta  directives // collected before the request line
-	req   *Request   // nil until the request line is seen
-	body  []string   // raw body lines, terminators included
+	title    string
+	meta     directives // collected before the request line
+	req      *Request   // nil until the request line is seen
+	body     []string   // raw body lines, terminators included
+	bodyLine int        // line number of body[0]
 }
 
 // directives holds the "# @..." lines of a section.
@@ -121,6 +126,9 @@ func (p *parser) fail(line int, format string, args ...any) error {
 // line handles one non-separator line of the current section.
 func (p *parser) line(lineNo int, line, rawLine string) error {
 	if p.state == stateBody {
+		if len(p.body) == 0 {
+			p.bodyLine = lineNo
+		}
 		p.body = append(p.body, rawLine)
 		return nil
 	}
@@ -179,9 +187,45 @@ func (p *parser) endSection(bySeparator bool) error {
 			body = trimTrailingBlank(body)
 		}
 		p.req.Body = strings.Join(body, "")
+		if path, ok := bodyFileRef(body); ok {
+			if err := p.loadBodyFile(p.req, path); err != nil {
+				return err
+			}
+		}
 		p.reqs = append(p.reqs, p.req)
 	}
-	p.state, p.title, p.meta, p.req, p.body = stateRequestLine, "", directives{}, nil, nil
+	p.state, p.title, p.meta = stateRequestLine, "", directives{}
+	p.req, p.body, p.bodyLine = nil, nil, 0
+	return nil
+}
+
+// bodyFileRef reports whether the body is a single "< path" line (trailing
+// blank lines aside) and returns the path.
+func bodyFileRef(body []string) (string, bool) {
+	lines := trimTrailingBlank(body)
+	if len(lines) != 1 {
+		return "", false
+	}
+	rest, ok := strings.CutPrefix(strings.TrimRight(lines[0], "\r\n"), "<")
+	if !ok || rest == "" || (rest[0] != ' ' && rest[0] != '\t') {
+		return "", false
+	}
+	path := strings.TrimSpace(rest)
+	return path, path != ""
+}
+
+// loadBodyFile replaces req's body with the contents of path, resolved
+// relative to the .mon file's directory (or the working directory for raw
+// input).
+func (p *parser) loadBodyFile(req *Request, path string) error {
+	if !filepath.IsAbs(path) && p.file != "" {
+		path = filepath.Join(filepath.Dir(p.file), path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return &ParseError{File: p.file, Line: p.bodyLine, Msg: fmt.Sprintf("reading body file: %v", err), Err: err}
+	}
+	req.Body, req.BodyFile = string(data), path
 	return nil
 }
 

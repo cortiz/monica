@@ -1,0 +1,14 @@
+POST http://example.com/users
+Content-Type: application/json
+
+< ./payloads/user.json
+
+###
+PUT http://example.com/users/1
+
+<./not-a-ref
+###
+POST http://example.com/notes
+
+< ./payloads/user.json
+and a second line
