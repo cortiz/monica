@@ -37,9 +37,14 @@ var (
 			}
 			r := runner.New(&runner.Opts{Env: env, Vars: vars, ConfigPath: configPath}, cmd.OutOrStdout())
 			if singleFile != "" {
-				return runSingleFile(r, singleFile)
+				err = runSingleFile(r, singleFile)
+			} else {
+				err = runAllFiles(r, recursiveLevel)
 			}
-			return runAllFiles(r, recursiveLevel)
+			if ferr := r.Finish(); ferr != nil && err == nil {
+				err = &exitError{code: ExitFailed, err: fmt.Errorf("writing report: %w", ferr)}
+			}
+			return err
 		},
 	}
 )
