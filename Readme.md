@@ -61,9 +61,39 @@ send → print response → post-response script.
 | `vars.get(n)` (`undefined` if unset) / `vars.has(n)` / `vars.set(n, v)` | ✓ | ✓ |
 | `monica.env` (selected environment or `""`) | ✓ | ✓ |
 | `console.log/info/warn/error` (to the log, secrets masked) | ✓ | ✓ |
+| `test(name, fn)`, `expect(value)` | ✓ | ✓ |
 
 `vars.set` stores the value as a string; it is visible to every later request of the run,
 including those in later files, but `--var` still wins.
+
+**Tests** — `test(name, fn)` runs `fn` and records a pass, or a failure when it throws; the
+other tests still run. Any failed test fails its request (exit 1). `expect(value)` matchers
+(each also available as `expect(value).not.<matcher>`):
+
+| Matcher | Passes when |
+|---------|-------------|
+| `toBe(x)` | `value` is `x` (`Object.is`: same primitive or same object) |
+| `toEqual(x)` | deeply equal (arrays and plain objects compared by content) |
+| `toContain(x)` | string contains `x`, or array has an element deeply equal to `x` |
+| `toMatch(re)` | string matches the RegExp `re` (or contains the string `re`) |
+| `toBeLessThan(n)`, `toBeLessThanOrEqual(n)`, `toBeGreaterThan(n)`, `toBeGreaterThanOrEqual(n)` | numeric comparison |
+| `toHaveProperty("a.b.0"[, x])` | the own-property path exists (and deeply equals `x`) |
+| `toHaveLength(n)` | `value.length === n` |
+| `toBeTruthy()`, `toBeFalsy()`, `toBeNull()`, `toBeUndefined()`, `toBeDefined()` | as named |
+
+A failed `expect` outside `test()` fails the whole script.
+
+```
+GET {{baseUrl}}/users/1
+
+> {%
+  test("returns user", () => {
+    expect(res.status).toBe(200);
+    expect(res.json().name).toEqual("ada");
+    expect(res.time).toBeLessThan(500);
+  });
+%}
+```
 
 **Errors** point at the line in the script's own file: the `.mon` file for `{% %}` blocks, the
 `.js` file for script files, e.g. `api.mon:12:5: TypeError: Cannot read property 'id' of

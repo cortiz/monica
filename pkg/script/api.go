@@ -27,17 +27,20 @@ type Context struct {
 }
 
 // RunPre runs a pre-request script. Changes to req.method, req.url,
-// req.headers and req.body are written back to req.
-func (e *Engine) RunPre(s *request.Script, req *request.Request, ctx Context) error {
+// req.headers and req.body are written back to req. It returns the test()
+// results recorded by the script.
+func (e *Engine) RunPre(s *request.Script, req *request.Request, ctx Context) ([]TestResult, error) {
 	r := e.newReq(req, true)
-	if err := e.run(s, e.globals(ctx, r.obj, nil), ctx.Timeout); err != nil {
-		return err
+	results, err := e.run(s, e.globals(ctx, r.obj, nil), ctx.Timeout)
+	if err != nil {
+		return results, err
 	}
-	return r.writeBack(req)
+	return results, r.writeBack(req)
 }
 
-// RunPost runs a post-response script with res set and req read-only.
-func (e *Engine) RunPost(s *request.Script, req *request.Request, res *net.HTTPResponse, ctx Context) error {
+// RunPost runs a post-response script with res set and req read-only, and
+// returns the test() results it recorded.
+func (e *Engine) RunPost(s *request.Script, req *request.Request, res *net.HTTPResponse, ctx Context) ([]TestResult, error) {
 	return e.run(s, e.globals(ctx, e.newReq(req, false).obj, e.newRes(res)), ctx.Timeout)
 }
 

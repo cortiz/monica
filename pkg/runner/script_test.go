@@ -85,6 +85,18 @@ func TestRunScripts(t *testing.T) {
 			wantOut: []string{"GET /echo?p=cli"},
 		},
 		{
+			name: "failed tests fail the request",
+			mon: "GET " + srv.URL + "/echo\n> {%\n  test(\"ok\", () => expect(res.status).toBe(200));\n" +
+				"  test(\"wrong\", () => expect(res.status).toBe(201));\n%}\n",
+			wantOut: []string{"GET /echo"},
+			wantErr: `test.mon:1: GET ` + srv.URL + `/echo: 1 of 2 tests failed: "wrong": expected 200 to be 201`,
+		},
+		{
+			name:    "passing tests",
+			mon:     "GET " + srv.URL + "/echo\n> {% test(\"ok\", () => expect(res.body).toContain(\"/echo\")) %}\n",
+			wantOut: []string{"GET /echo"},
+		},
+		{
 			name:     "console output goes to the log",
 			mon:      "GET " + srv.URL + "/echo\n> {% console.log(\"status\", res.status) %}\n",
 			wantLogs: "console.log: status 200",

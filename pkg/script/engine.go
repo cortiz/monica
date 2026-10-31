@@ -25,12 +25,13 @@ type Options struct {
 // concurrent use: use one Engine per goroutine.
 //
 // The sandbox is plain ECMAScript plus the globals the engine installs
-// (console, and per run req, res, vars, monica); there is no require, file
-// system, network or process access.
+// (console, and per run req, res, vars, monica, test, expect); there is no
+// require, file system, network or process access.
 type Engine struct {
 	rt       *goja.Runtime
 	programs map[*request.Script]*goja.Program
 	console  ConsoleFunc
+	results  []TestResult // test() outcomes of the current run
 }
 
 // maxCallStack bounds JS recursion so runaway scripts fail fast with a
@@ -112,16 +113,23 @@ func (e *Engine) compile(s *request.Script) (*goja.Program, error) {
 	return p, nil
 }
 
-// run executes s with globals visible for this run only, interrupting it
-// after timeout (DefaultTimeout when zero). Failures are *Error.
-func (e *Engine) run(s *request.Script, globals map[string]any, timeout time.Duration) error {
+// run executes s with globals (plus test and expect) visible for this run
+// only, interrupting it after timeout (DefaultTimeout when zero). It returns
+// the test() results recorded before it finished; failures are *Error.
+func (e *Engine) run(s *request.Script, globals map[string]any, timeout time.Duration) ([]TestResult, error) {
+	e.results = nil
 	prog, err := e.compile(s)
 	if err != nil {
-		return toError(s, err)
+		return nil, toError(s, err)
 	}
+	all := e.installTesting()
+	for name, v := range globals {
+		all[name] = v
+	}
+	globals = all
 	for name, v := range globals {
 		if err := e.rt.Set(name, v); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	defer func() {
@@ -132,5 +140,5 @@ func (e *Engine) run(s *request.Script, globals map[string]any, timeout time.Dur
 	stop := e.interruptAfter(timeout)
 	_, err = e.rt.RunProgram(prog)
 	stop()
-	return toError(s, err)
+	return e.results, toError(s, err)
 }

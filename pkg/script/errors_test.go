@@ -55,7 +55,7 @@ func TestScriptErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			e, _ := newTestEngine()
 			req := &request.Request{Method: "GET", URL: "http://a.example/", Headers: http.Header{}}
-			err := e.RunPre(tt.script, req, Context{Vars: mapVars{}, Timeout: tt.timeout})
+			_, err := e.RunPre(tt.script, req, Context{Vars: mapVars{}, Timeout: tt.timeout})
 			var se *Error
 			if !errors.As(err, &se) {
 				t.Fatalf("expected *script.Error, got %T: %v", err, err)
@@ -68,7 +68,7 @@ func TestScriptErrors(t *testing.T) {
 			}
 
 			// The engine stays usable after any failure, timeouts included.
-			if err := e.RunPre(src(`req.headers.set("X-After", "ok")`), req, Context{Vars: mapVars{}}); err != nil {
+			if _, err := e.RunPre(src(`req.headers.set("X-After", "ok")`), req, Context{Vars: mapVars{}}); err != nil {
 				t.Fatalf("engine unusable after %s: %v", tt.wantKind, err)
 			}
 		})
