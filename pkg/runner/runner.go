@@ -45,6 +45,9 @@ type Runner struct {
 	bailed   bool                      // --bail tripped: run nothing more
 	filters  []*regexp.Regexp          // compiled Opts.Filters
 
+	iteration int // 1-based --data row being run; 0 without --data
+	row       Row // its variables
+
 	chains    map[string][]*hookFile // monica.js chain by folder and root
 	hookFiles map[string]*hookFile   // by absolute path; nil = none there
 	entered   []*hookFile            // beforeAll done, in order: afterAll pending
@@ -97,7 +100,19 @@ func (r *Runner) Finish() error {
 	return r.rep.Done(report.Summarize(r.results, time.Since(r.start)))
 }
 
+// SetIteration starts iteration n (1-based) of a data-driven run: row's
+// variables apply to the requests run next. Values a script set with
+// vars.set for one of row's names are dropped, so each row starts from its
+// own data; other vars.set values carry over.
+func (r *Runner) SetIteration(n int, row Row) {
+	r.iteration, r.row = n, row
+	for name := range row {
+		delete(r.runtime, name)
+	}
+}
+
 func (r *Runner) emit(res report.Request) {
+	res.Iteration = r.iteration
 	r.results = append(r.results, res)
 	r.rep.Request(res)
 	if r.opts.Bail && res.Failed() && !r.bailed {
@@ -343,12 +358,16 @@ func (r *Runner) scripts(file string, p *project) *script.Engine {
 	return e
 }
 
-// lookup resolves a variable: --var, then vars.set values, then config vars.
+// lookup resolves a variable: --var, then vars.set values, then the
+// --data row, then config vars.
 func (r *Runner) lookup(s *config.Resolved, name string) (string, bool) {
 	if v, ok := r.opts.Vars[name]; ok {
 		return v, true
 	}
 	if v, ok := r.runtime[name]; ok {
+		return v, true
+	}
+	if v, ok := r.row[name]; ok {
 		return v, true
 	}
 	v, ok := s.Vars[name]
