@@ -1,0 +1,6 @@
+# @name getUser
+GET {{baseUrl}}/users/{{ id }}
+Authorization: Bearer {{token}}
+X-Static: plain
+
+{"id": "{{id}}"}

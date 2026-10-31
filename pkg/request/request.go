@@ -1,6 +1,7 @@
 package request
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -53,4 +54,37 @@ func (r Request) Label() string {
 		return r.Title
 	}
 	return r.String()
+}
+
+// Render returns a copy of r with expand applied to the URL, every header
+// value and the body (a body read from a file is sent as is), then checks the
+// expanded URL. Errors are *ParseError at the request line.
+func (r *Request) Render(expand func(string) (string, error)) (*Request, error) {
+	fail := func(where string, err error) error {
+		return &ParseError{File: r.File, Line: r.Line, Msg: fmt.Sprintf("%s: %v", where, err), Err: err}
+	}
+	out := *r
+	var err error
+	if out.URL, err = expand(r.URL); err != nil {
+		return nil, fail("url", err)
+	}
+	if err := validateURL(out.URL); err != nil {
+		return nil, fail("url", err)
+	}
+	out.Headers = make(http.Header, len(r.Headers))
+	for name, values := range r.Headers {
+		for _, v := range values {
+			ev, err := expand(v)
+			if err != nil {
+				return nil, fail("header "+name, err)
+			}
+			out.Headers[name] = append(out.Headers[name], ev)
+		}
+	}
+	if r.BodyFile == "" {
+		if out.Body, err = expand(r.Body); err != nil {
+			return nil, fail("body", err)
+		}
+	}
+	return &out, nil
 }

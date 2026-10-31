@@ -352,7 +352,7 @@ var (
 
 // parseRequestLine parses "METHOD URL [HTTP/x.y]".
 func parseRequestLine(line string, r *Request) error {
-	parts := strings.Fields(line)
+	parts := splitRequestLine(line)
 	if len(parts) < 2 || len(parts) > 3 {
 		return fmt.Errorf("invalid request line %q (expected \"METHOD URL [HTTP/x.y]\")", line)
 	}
@@ -360,6 +360,55 @@ func parseRequestLine(line string, r *Request) error {
 	if !tokenRe.MatchString(method) {
 		return fmt.Errorf("invalid method %q", method)
 	}
+	// A templated URL is checked once its {{variables}} are expanded.
+	if !strings.Contains(rawURL, "{{") {
+		if err := validateURL(rawURL); err != nil {
+			return err
+		}
+	}
+	if len(parts) == 3 {
+		if !protoRe.MatchString(parts[2]) {
+			return fmt.Errorf("invalid HTTP version %q (expected e.g. HTTP/1.1)", parts[2])
+		}
+		r.Proto = parts[2]
+	}
+	r.Method, r.URL = method, rawURL
+	return nil
+}
+
+// splitRequestLine splits on spaces and tabs, except inside {{ ... }} so a
+// placeholder like "{{ id }}" stays part of the URL.
+func splitRequestLine(line string) []string {
+	var parts []string
+	var cur strings.Builder
+	inside := false
+	for i := 0; i < len(line); i++ {
+		switch {
+		case !inside && strings.HasPrefix(line[i:], "{{"):
+			inside = true
+			cur.WriteString("{{")
+			i++
+		case inside && strings.HasPrefix(line[i:], "}}"):
+			inside = false
+			cur.WriteString("}}")
+			i++
+		case !inside && (line[i] == ' ' || line[i] == '\t'):
+			if cur.Len() > 0 {
+				parts = append(parts, cur.String())
+				cur.Reset()
+			}
+		default:
+			cur.WriteByte(line[i])
+		}
+	}
+	if cur.Len() > 0 {
+		parts = append(parts, cur.String())
+	}
+	return parts
+}
+
+// validateURL requires an absolute http(s) URL with a host.
+func validateURL(rawURL string) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("invalid URL %q: %v", rawURL, err)
@@ -370,12 +419,5 @@ func parseRequestLine(line string, r *Request) error {
 	if u.Host == "" {
 		return fmt.Errorf("invalid URL %q: missing host", rawURL)
 	}
-	if len(parts) == 3 {
-		if !protoRe.MatchString(parts[2]) {
-			return fmt.Errorf("invalid HTTP version %q (expected e.g. HTTP/1.1)", parts[2])
-		}
-		r.Proto = parts[2]
-	}
-	r.Method, r.URL = method, rawURL
 	return nil
 }

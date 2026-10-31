@@ -2,6 +2,7 @@ package net
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -27,13 +28,35 @@ type Client struct {
 	timeout time.Duration
 }
 
-// NewClient returns a Client whose requests time out after timeout (zero
-// means no timeout). A request's own Timeout overrides it.
-func NewClient(timeout time.Duration) *Client {
-	return &Client{http: &http.Client{}, timeout: timeout}
+// Options configure a Client.
+type Options struct {
+	// Timeout bounds each request (zero means none); a request's own Timeout
+	// overrides it.
+	Timeout time.Duration
+	// NoFollowRedirects returns 3xx responses instead of following them.
+	NoFollowRedirects bool
+	// InsecureSkipVerify disables TLS certificate verification. Opt-in only,
+	// for self-signed development servers.
+	InsecureSkipVerify bool
 }
 
-var defaultClient = NewClient(DefaultTimeout)
+// NewClient returns a Client configured by opts.
+func NewClient(opts Options) *Client {
+	hc := &http.Client{}
+	if opts.NoFollowRedirects {
+		hc.CheckRedirect = func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+	}
+	if opts.InsecureSkipVerify {
+		tr := http.DefaultTransport.(*http.Transport).Clone()
+		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // #nosec G402 -- explicit user opt-in
+		hc.Transport = tr
+	}
+	return &Client{http: hc, timeout: opts.Timeout}
+}
+
+var defaultClient = NewClient(Options{Timeout: DefaultTimeout})
 
 // HTTPRequest sends request with the shared default client.
 func HTTPRequest(request *request.Request, headerOnly bool) (*HTTPResponse, error) {
