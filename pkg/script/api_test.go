@@ -130,3 +130,39 @@ func TestAPIErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestReqSkip(t *testing.T) {
+	tests := []struct {
+		name       string
+		code       string
+		wantSkip   bool
+		wantReason string
+	}{
+		{"not called", `req.url += "?x"`, false, ""},
+		{"without reason", `req.skip()`, true, ""},
+		{"with reason", `if (vars.get("env") !== "prod") req.skip("prod only")`, true, "prod only"},
+		{"reason converted to string", `req.skip(42)`, true, "42"},
+		{"script keeps running after skip", `req.skip(); req.url = "http://b.example/"`, true, ""},
+		{"monica.iteration is visible", `if (monica.iteration === 3) req.skip("row 3")`, true, "row 3"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e, _ := newTestEngine()
+			req := &request.Request{Method: "GET", URL: "http://a.example/", Headers: http.Header{}}
+			if _, err := e.RunPre(src(tt.code), req, Context{Vars: mapVars{"env": "dev"}, Iteration: 3}); err != nil {
+				t.Fatal(err)
+			}
+			if req.Skip != tt.wantSkip || req.SkipReason != tt.wantReason {
+				t.Fatalf("Skip=%v reason=%q, want %v %q", req.Skip, req.SkipReason, tt.wantSkip, tt.wantReason)
+			}
+		})
+	}
+	t.Run("throws in post-response scripts", func(t *testing.T) {
+		e, _ := newTestEngine()
+		req := &request.Request{Method: "GET", URL: "http://a.example/", Headers: http.Header{}}
+		_, err := e.RunPost(src(`req.skip()`), req, &net.HTTPResponse{StatusCode: 200}, Context{Vars: mapVars{}})
+		if err == nil || !strings.Contains(err.Error(), "req.skip: only pre-request scripts") {
+			t.Fatalf("err = %v", err)
+		}
+	})
+}

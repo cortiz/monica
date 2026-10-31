@@ -55,6 +55,9 @@ func (c *Console) Request(r Request) {
 	if r.Status > 0 {
 		head += fmt.Sprintf(" → %d %s  %s", r.Status, r.StatusText, formatDuration(r.Duration))
 	}
+	if r.Attempts > 1 {
+		head += fmt.Sprintf("  %d attempts", r.Attempts)
+	}
 	c.printf("%s  %s\n", head, where)
 	if r.Error != "" {
 		c.printf("    %s %s\n", markFail, indent(r.Error, "      "))

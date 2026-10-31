@@ -1,0 +1,8 @@
+### Flaky upstream
+# @name flaky
+# @retry 3 250ms
+GET http://example.com/flaky
+
+###
+# @retry 1
+GET http://example.com/once

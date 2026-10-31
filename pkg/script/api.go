@@ -71,8 +71,10 @@ func (e *Engine) argString(call goja.FunctionCall, fn string, i int) string {
 }
 
 type reqObject struct {
-	obj     *goja.Object
-	headers http.Header
+	obj        *goja.Object
+	headers    http.Header
+	skip       bool // req.skip() was called
+	skipReason string
 }
 
 // newReq exposes method, url and body as plain properties and headers with
@@ -106,6 +108,18 @@ func (e *Engine) newReq(req *request.Request, mutable bool) *reqObject {
 		r.headers.Del(e.argString(c, "req.headers.delete", 0))
 	}))
 	_ = r.obj.Set("headers", h)
+	// skip([reason]) marks the request as skipped: it is not sent. The
+	// script itself runs to the end.
+	_ = r.obj.Set("skip", func(call goja.FunctionCall) goja.Value {
+		if !mutable {
+			e.throw("req.skip: only pre-request scripts and beforeEach hooks can skip a request")
+		}
+		r.skip = true
+		if arg := call.Argument(0); !goja.IsUndefined(arg) && !goja.IsNull(arg) {
+			r.skipReason = arg.String()
+		}
+		return goja.Undefined()
+	})
 	return r
 }
 
@@ -121,6 +135,9 @@ func (r *reqObject) writeBack(req *request.Request) error {
 		req.Body, req.BodyFile = body, "" // a script-set body is no longer the file's
 	}
 	req.Headers = r.headers
+	if r.skip {
+		req.Skip, req.SkipReason = true, r.skipReason
+	}
 	return nil
 }
 

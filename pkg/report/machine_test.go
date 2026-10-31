@@ -137,3 +137,21 @@ func TestReportsNameDataRow(t *testing.T) {
 		t.Errorf("console without data: %q", console.String())
 	}
 }
+
+func TestReportsAttempts(t *testing.T) {
+	r := Request{File: "api.mon", Line: 3, Name: "flaky", Method: "GET", URL: "http://x/", Status: 200, StatusText: "OK", Attempts: 3}
+	var console bytes.Buffer
+	NewConsole(&console).Request(r)
+	if !strings.Contains(console.String(), "  3 attempts  (api.mon:3)") {
+		t.Errorf("console: %q", console.String())
+	}
+	var js bytes.Buffer
+	j := NewJSON(&js)
+	j.Request(r)
+	if err := j.Done(Summarize([]Request{r}, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.ReplaceAll(js.String(), " ", ""), `"attempts":3`) {
+		t.Errorf("json: %s", js.String())
+	}
+}

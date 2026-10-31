@@ -202,7 +202,7 @@ on load (modules, script files and `{% %}` blocks), with inline source maps for 
 
 ---
 
-## Phase 6 — Collections & chaining
+## Phase 6 — Collections & chaining ✅ done
 
 | ID | Task | Size |
 |----|------|------|
@@ -212,9 +212,15 @@ on load (modules, script files and `{% %}` blocks), with inline source maps for 
 | 6.4 | Retries & conditional skip | S |
 
 **6.1** Files sorted by path; requests in file order; optional `order:` list in `monica.yml`.
+Done: path order is folder by folder; `order:` entries are files or folders, per config.
 **6.2** `vars.set` in one request is visible to the following ones (login → token → use).
+Done (already true since phase 3; now tested across files and `monica.yml` projects).
 **6.3** `monica run --data users.csv` iterates rows as vars.
+Done: `.csv` (header row) or `.json` (array of objects); each row runs every selected file;
+precedence `--var` > `vars.set` > row > config; `monica.iteration`; reports name the row.
 **6.4** `# @retry 3 1s`; `req.skip()` from pre-request script.
+Done: `beforeEach` hooks can also call `req.skip()`; retries cover connection errors,
+script/hook errors and failed tests (not input errors); only the last attempt is reported.
 
 ---
 
