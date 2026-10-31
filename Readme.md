@@ -29,6 +29,8 @@ Monica is designed to handle Network requests and responses.
 | `-e, --env <name>` | Environment from `monica.yml` (default `$MONICA_ENV`) |
 | `--var name=value` | Set a variable; repeatable, overrides `monica.yml` |
 | `-c, --config <file>` | Use this config instead of the nearest `monica.yml` |
+| `--reporter <format>` | `console` (default), `json` or `junit` |
+| `-o, --out <file>` | Write the report to a file |
 
 The report goes to stdout; logs and errors go to stderr. For each request it prints a status
 line, the response, and ✓/✗ per test (with the failure message), then a summary:
@@ -50,6 +52,21 @@ Content-Type: application/json
 
 3 requests: 1 passed, 1 failed, 1 skipped · 2 tests: 1 passed, 1 failed · 61ms
 ```
+
+**CI reports** — `--reporter json` or `--reporter junit` writes a machine-readable report. With
+`--out <file>` it goes to the file and the console report still prints to stdout; without
+`--out` only the machine report is printed, so it can be piped.
+
+```bash
+monica run --reporter junit --out monica-report.xml
+```
+
+* **JSON**: `{"summary": {...}, "requests": [{"file", "line", "name", "method", "url",
+  "status", "statusText", "durationMs", "skipped", "skipReason", "error", "failed",
+  "tests": [{"name", "passed", "error"}]}]}`. Response bodies are not included.
+* **JUnit**: one `<testsuite>` per `.mon` file; each `test()` is a `<testcase>` (a request
+  without tests is one testcase). Failed tests are `<failure>`, request or script errors
+  `<error>`, `@skip` requests `<skipped>`.
 
 ### Exit codes
 | Code | Meaning |
