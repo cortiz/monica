@@ -24,6 +24,12 @@ func runCLI(t *testing.T, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
 	// Flags are package-level; reset them so tests don't leak into each other.
 	singleFile, recursiveLevel = "", 1
+	envName, varFlags, configPath = "", nil, ""
+	for _, name := range []string{"env", "var", "config", "single", "recursive"} {
+		if f := run.Flags().Lookup(name); f != nil {
+			f.Changed = false
+		}
+	}
 	var out, errOut bytes.Buffer
 	rootCmd.SetOut(&out)
 	rootCmd.SetErr(&errOut)
@@ -128,4 +134,53 @@ func chdir(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chdir(prev) })
+}
+
+func TestRunConfigFlags(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("path=" + r.URL.Path))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	yml := "version: 1\ndefaults:\n  vars:\n    baseUrl: " + srv.URL + "\n    id: default\nenvs:\n  dev:\n    vars:\n      id: dev\n  prod:\n    vars:\n      id: prod\n"
+	writeMon(t, dir, "monica.yml", yml)
+	other := t.TempDir()
+	writeMon(t, other, "custom.yml", strings.Replace(yml, "id: default", "id: custom", 1))
+	mon := writeMon(t, dir, "req.mon", "GET {{baseUrl}}/{{id}}\n")
+
+	tests := []struct {
+		name       string
+		monicaEnv  string
+		args       []string
+		wantCode   int
+		wantStdout string
+		wantStderr string
+	}{
+		{"defaults", "", []string{"run", "-s", mon}, ExitOK, "path=/default", ""},
+		{"--env", "", []string{"run", "-s", mon, "--env", "dev"}, ExitOK, "path=/dev", ""},
+		{"-e short flag", "", []string{"run", "-s", mon, "-e", "prod"}, ExitOK, "path=/prod", ""},
+		{"MONICA_ENV default", "prod", []string{"run", "-s", mon}, ExitOK, "path=/prod", ""},
+		{"--env beats MONICA_ENV", "prod", []string{"run", "-s", mon, "--env", "dev"}, ExitOK, "path=/dev", ""},
+		{"--var beats env vars, last wins", "", []string{"run", "-s", mon, "-e", "dev", "--var", "id=a", "--var", "id=b=c"}, ExitOK, "path=/b=c", ""},
+		{"--config", "", []string{"run", "-s", mon, "--config", filepath.Join(other, "custom.yml")}, ExitOK, "path=/custom", ""},
+		{"unknown env", "", []string{"run", "-s", mon, "--env", "qa"}, ExitUsage, "", `unknown environment "qa"`},
+		{"bad --var", "", []string{"run", "-s", mon, "--var", "novalue"}, ExitUsage, "", `invalid --var "novalue"`},
+		{"missing --config", "", []string{"run", "-s", mon, "-c", filepath.Join(other, "nope.yml")}, ExitUsage, "", "reading config"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("MONICA_ENV", tt.monicaEnv)
+			code, stdout, stderr := runCLI(t, tt.args...)
+			if code != tt.wantCode {
+				t.Errorf("exit code = %d, want %d (stderr: %s)", code, tt.wantCode, stderr)
+			}
+			if !strings.Contains(stdout, tt.wantStdout) {
+				t.Errorf("stdout %q does not contain %q", stdout, tt.wantStdout)
+			}
+			if !strings.Contains(stderr, tt.wantStderr) {
+				t.Errorf("stderr %q does not contain %q", stderr, tt.wantStderr)
+			}
+		})
+	}
 }
