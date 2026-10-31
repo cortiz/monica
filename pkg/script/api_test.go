@@ -34,7 +34,7 @@ func TestRunPreMutatesRequest(t *testing.T) {
 		req.body = JSON.stringify({n: 1});
 		vars.set("token", 42);
 	`
-	if err := e.RunPre(src(code), req, Context{Env: "dev", Vars: vars}); err != nil {
+	if _, err := e.RunPre(src(code), req, Context{Env: "dev", Vars: vars}); err != nil {
 		t.Fatal(err)
 	}
 	if got := (*out)[0].msg; got != "GET {{base}}/users text/plain dev http://a.example undefined true" {
@@ -55,14 +55,14 @@ func TestRunPreMutatesRequest(t *testing.T) {
 func TestRunPreBodyFile(t *testing.T) {
 	e, _ := newTestEngine()
 	unchanged := &request.Request{Method: "POST", URL: "http://a.example/", Body: "file", BodyFile: "p.json", Headers: http.Header{}}
-	if err := e.RunPre(src(`req.headers.set("X", "1")`), unchanged, Context{Vars: mapVars{}}); err != nil {
+	if _, err := e.RunPre(src(`req.headers.set("X", "1")`), unchanged, Context{Vars: mapVars{}}); err != nil {
 		t.Fatal(err)
 	}
 	if unchanged.BodyFile != "p.json" {
 		t.Fatal("untouched body must keep its file origin")
 	}
 	changed := &request.Request{Method: "POST", URL: "http://a.example/", Body: "file", BodyFile: "p.json", Headers: http.Header{}}
-	if err := e.RunPre(src(`req.body = "{{x}}"`), changed, Context{Vars: mapVars{}}); err != nil {
+	if _, err := e.RunPre(src(`req.body = "{{x}}"`), changed, Context{Vars: mapVars{}}); err != nil {
 		t.Fatal(err)
 	}
 	if changed.BodyFile != "" || changed.Body != "{{x}}" {
@@ -87,7 +87,7 @@ func TestRunPost(t *testing.T) {
 			req.headers.get("accept"), res.headers.all()["Set-Cookie"].length, typeof res.body);
 		vars.set("id", data.id);
 	`
-	if err := e.RunPost(src(code), req, res, Context{Vars: vars}); err != nil {
+	if _, err := e.RunPost(src(code), req, res, Context{Vars: vars}); err != nil {
 		t.Fatal(err)
 	}
 	want := "201 Created application/json a=1, b=2 null true 7 x 1.5 http://a.example/u application/json 2 string"
@@ -120,9 +120,9 @@ func TestAPIErrors(t *testing.T) {
 			req := &request.Request{Method: "GET", URL: "http://a.example/", Headers: http.Header{}}
 			var err error
 			if tt.pre {
-				err = e.RunPre(src(tt.code), req, Context{Vars: mapVars{}})
+				_, err = e.RunPre(src(tt.code), req, Context{Vars: mapVars{}})
 			} else {
-				err = e.RunPost(src(tt.code), req, res, Context{Vars: mapVars{}})
+				_, err = e.RunPost(src(tt.code), req, res, Context{Vars: mapVars{}})
 			}
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("error %v does not contain %q", err, tt.wantErr)

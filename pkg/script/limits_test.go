@@ -15,7 +15,7 @@ func TestRunawayScriptsFailCleanly(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			e, _ := newTestEngine()
 			start := time.Now()
-			err := e.run(src(tt.code), nil, 0)
+			_, err := e.run(src(tt.code), nil, 0)
 			if time.Since(start) > time.Second {
 				t.Errorf("took %s; should fail fast, not at the timeout", time.Since(start))
 			}

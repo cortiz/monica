@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"jmpeax.com/sec/monica/internal/config"
@@ -85,8 +86,11 @@ func (r *Runner) RunFile(file string) error {
 		ctx := script.Context{Env: p.settings.Env, Vars: &runVars{r: r, s: p.settings}, Timeout: p.scriptTimeout}
 		working := *req
 		working.Headers = req.Headers.Clone()
+		var tests []script.TestResult
 		if req.PreScript != nil {
-			if err := r.scripts().RunPre(req.PreScript, &working, ctx); err != nil {
+			results, err := r.scripts().RunPre(req.PreScript, &working, ctx)
+			tests = append(tests, results...)
+			if err != nil {
 				errs = append(errs, scriptFailure(p, fmt.Errorf("%s: %s: pre-request script: %w", where, req.Label(), err)))
 				continue
 			}
@@ -106,12 +110,31 @@ func (r *Runner) RunFile(file string) error {
 			return err
 		}
 		if req.PostScript != nil {
-			if err := r.scripts().RunPost(req.PostScript, rendered, res, ctx); err != nil {
+			results, err := r.scripts().RunPost(req.PostScript, rendered, res, ctx)
+			tests = append(tests, results...)
+			if err != nil {
 				errs = append(errs, scriptFailure(p, fmt.Errorf("%s: %s: post-response script: %w", where, req.Label(), err)))
 			}
 		}
+		if err := testFailures(tests); err != nil {
+			errs = append(errs, p.mask.Error(fmt.Errorf("%s: %s: %w", where, req.Label(), err)))
+		}
 	}
 	return errors.Join(errs...)
+}
+
+// testFailures summarizes failed tests as one error, or nil.
+func testFailures(tests []script.TestResult) error {
+	var failed []string
+	for _, t := range tests {
+		if !t.Passed {
+			failed = append(failed, fmt.Sprintf("%q: %s", t.Name, t.Error))
+		}
+	}
+	if len(failed) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%d of %d tests failed: %s", len(failed), len(tests), strings.Join(failed, "; "))
 }
 
 // scriptFailure masks a script error; a script that doesn't compile is an

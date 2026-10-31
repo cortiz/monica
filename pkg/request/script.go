@@ -6,8 +6,7 @@ import (
 	"strings"
 )
 
-// Script is JavaScript attached to a request. Scripts are only parsed for now;
-// they run once the script engine lands (roadmap phase 3).
+// Script is JavaScript attached to a request; pkg/script runs it.
 type Script struct {
 	// Source is the code, verbatim, with "\n" line endings.
 	Source string
