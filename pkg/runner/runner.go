@@ -19,10 +19,10 @@ type InputError struct {
 func (e *InputError) Error() string { return e.Err.Error() }
 func (e *InputError) Unwrap() error { return e.Err }
 
-// RunSingleFile parses file, sends its requests in order and writes each
-// response to out. A failed request does not stop the ones after it; all
-// failures are returned joined. Read and parse failures are returned as
-// *InputError before anything is sent.
+// RunSingleFile parses file, sends its requests in order (except those marked
+// @skip) and writes each response to out. A failed request does not stop the
+// ones after it; all failures are returned joined. Read and parse failures
+// are returned as *InputError before anything is sent.
 func RunSingleFile(file string, r *Opts, out io.Writer) error {
 	reqs, err := request.ParseMonFile(file)
 	if err != nil {
@@ -31,6 +31,14 @@ func RunSingleFile(file string, r *Opts, out io.Writer) error {
 	var errs []error
 	for _, req := range reqs {
 		where := fmt.Sprintf("%s:%d", file, req.Line)
+		if req.Skip {
+			msg := fmt.Sprintf("%s: skipping %s", where, req.Label())
+			if req.SkipReason != "" {
+				msg += ": " + req.SkipReason
+			}
+			logging.Log.Info().Msg(msg)
+			continue
+		}
 		logging.Log.Info().Msgf("%s: %s", where, req.Label())
 		res, err := net.HTTPRequest(req, r.HeaderOnly)
 		if err != nil {

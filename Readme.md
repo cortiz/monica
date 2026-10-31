@@ -31,6 +31,7 @@ Parse errors are reported as `file:line: message`.
 ## Mon file format
 ```
 # Comment
+# @name requestName
 METHOD URL [HTTP/x.y]
 Header-Name: value
 Header-Name: another value
@@ -47,6 +48,15 @@ a failing request does not stop the ones after it.
 
 * **Comments** — lines starting with `#` before the body are ignored (before the request
   line and between headers). Blank lines before the request line are ignored too.
+* **Directives** — comment lines of the form `# @key [value]` set request metadata. They must
+  come before the request line (a directive among the headers is an error). Each may appear
+  once per request; unknown directives are errors, so comments starting with `# @` are reserved.
+
+  | Directive | Meaning |
+  |-----------|---------|
+  | `# @name <name>` | Names the request (letters, digits, `_`, `-`, `.`; not starting with a digit). Unique within a file. Shown in logs and errors; used for chaining later. |
+  | `# @timeout <duration>` | Per-request timeout, e.g. `500ms`, `5s`, `1m`. Overrides the default (30s). |
+  | `# @skip [reason]` | Parse the request but don't send it. |
 * **Request line** — `METHOD URL`, optionally followed by an HTTP version such as `HTTP/1.1`.
   The method must be a valid HTTP token; the URL must be absolute with an `http`/`https`
   scheme and a host.
@@ -84,6 +94,8 @@ User-Agent: monica/0.1.0
 
 ```
 ### List users
+# @name listUsers
+# @timeout 5s
 GET http://example.com/users
 Accept: application/json
 

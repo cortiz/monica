@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"jmpeax.com/sec/monica/pkg/request"
 )
@@ -152,6 +153,51 @@ func TestParseMonFile(t *testing.T) {
 					Body:    "# a body line, not a comment\n",
 				},
 			},
+		},
+		{
+			name: "metadata directives",
+			file: "testdata/metadata.mon",
+			want: []*request.Request{
+				{
+					File:    "testdata/metadata.mon",
+					Line:    4,
+					Title:   "Login",
+					Name:    "login",
+					Timeout: 5 * time.Second,
+					Method:  "POST",
+					URL:     "http://example.com/login",
+					Headers: http.Header{"Content-Type": {"application/json"}},
+					Body:    "{\"user\":\"ada\"}\n",
+				},
+				{
+					File:       "testdata/metadata.mon",
+					Line:       12,
+					Skip:       true,
+					SkipReason: "flaky upstream",
+					Method:     "GET",
+					URL:        "http://example.com/flaky",
+					Headers:    http.Header{},
+				},
+				{
+					File:    "testdata/metadata.mon",
+					Line:    17,
+					Name:    "list-users.v2",
+					Skip:    true,
+					Method:  "GET",
+					URL:     "http://example.com/users",
+					Headers: http.Header{},
+				},
+			},
+		},
+		{
+			name:    "duplicate request name",
+			file:    "testdata/duplicate_name.mon",
+			wantErr: "testdata/duplicate_name.mon:4: duplicate request name \"a\" (first at line 1)",
+		},
+		{
+			name:    "directive after the request line",
+			file:    "testdata/directive_after_request_line.mon",
+			wantErr: "testdata/directive_after_request_line.mon:2: directive \"# @name late\" must come before the request line",
 		},
 		{
 			name:    "missing request line",
@@ -301,6 +347,31 @@ func TestParseRequest(t *testing.T) {
 			raw:  "### first\n###\nGET http://a.example/\n",
 			want: one(request.Request{Line: 3, Method: "GET", URL: "http://a.example/", Headers: http.Header{}}),
 		},
+		{
+			name: "tab after directive key",
+			raw:  "#\t@timeout\t250ms\nGET http://a.example/\n",
+			want: one(request.Request{Line: 2, Timeout: 250 * time.Millisecond, Method: "GET", URL: "http://a.example/", Headers: http.Header{}}),
+		},
+		{
+			name: "directive-like line in the body is body text",
+			raw:  "POST http://a.example/\n\n# @name body\n",
+			want: one(request.Request{Method: "POST", URL: "http://a.example/", Headers: http.Header{}, Body: "# @name body\n"}),
+		},
+		{
+			name: "title and name together",
+			raw:  "### title\n# @name n1\nGET http://a.example/\n",
+			want: one(request.Request{Line: 3, Title: "title", Name: "n1", Method: "GET", URL: "http://a.example/", Headers: http.Header{}}),
+		},
+		{name: "unknown directive", raw: "# @retry 3\nGET http://a.example/\n", wantErr: "line 1: unknown directive @retry"},
+		{name: "empty directive", raw: "# @\nGET http://a.example/\n", wantErr: "line 1: empty directive"},
+		{name: "missing name", raw: "# @name\nGET http://a.example/\n", wantErr: "line 1: invalid @name \"\""},
+		{name: "name starting with digit", raw: "# @name 1st\nGET http://a.example/\n", wantErr: "line 1: invalid @name \"1st\""},
+		{name: "name with space", raw: "# @name a b\nGET http://a.example/\n", wantErr: "line 1: invalid @name \"a b\""},
+		{name: "timeout without unit", raw: "# @timeout 5\nGET http://a.example/\n", wantErr: "line 1: invalid @timeout \"5\""},
+		{name: "negative timeout", raw: "# @timeout -1s\nGET http://a.example/\n", wantErr: "line 1: invalid @timeout \"-1s\""},
+		{name: "repeated directive", raw: "# @timeout 1s\n# @timeout 2s\nGET http://a.example/\n", wantErr: "line 2: duplicate @timeout (first at line 1)"},
+		{name: "directives without a request", raw: "# @name orphan\n###\nGET http://a.example/\n", wantErr: "line 1: directives without a request"},
+		{name: "directives at EOF", raw: "GET http://a.example/\n###\n# @skip\n", wantErr: "line 3: directives without a request"},
 		{name: "empty input", raw: "", wantErr: "missing request line"},
 		{name: "only separators", raw: "###\n### title\n", wantErr: "missing request line"},
 		{name: "request line without URL", raw: "# comment\nGET\n", wantErr: "line 2: invalid request line"},
@@ -325,6 +396,7 @@ func TestLabel(t *testing.T) {
 	}{
 		{request.Request{Method: "GET", URL: "http://a.example/"}, "GET http://a.example/"},
 		{request.Request{Title: "List users", Method: "GET", URL: "http://a.example/"}, "List users"},
+		{request.Request{Name: "list", Title: "List users", Method: "GET", URL: "http://a.example/"}, "list"},
 	}
 	for _, tt := range tests {
 		if got := tt.req.Label(); got != tt.want {

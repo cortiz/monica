@@ -173,20 +173,48 @@ func TestHTTPResponseString(t *testing.T) {
 }
 
 func TestClientTimeout(t *testing.T) {
-	release := make(chan struct{})
+	// The handler answers after delay, or gives up when the client goes away.
+	const delay = 200 * time.Millisecond
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		<-release
+		select {
+		case <-time.After(delay):
+			_, _ = w.Write([]byte("late"))
+		case <-r.Context().Done():
+		}
 	}))
 	defer srv.Close()
-	defer close(release) // unblock the handler before srv.Close waits on it
 
-	c := net.NewClient(50 * time.Millisecond)
-	_, err := c.Do(&request.Request{Method: "GET", URL: srv.URL}, false)
-	if err == nil {
-		t.Fatal("expected timeout error")
+	tests := []struct {
+		name          string
+		clientTimeout time.Duration
+		reqTimeout    time.Duration
+		wantErr       bool
+	}{
+		{"client default times out", 50 * time.Millisecond, 0, true},
+		{"request timeout shorter than client default", 10 * time.Second, 50 * time.Millisecond, true},
+		{"request timeout longer than client default", 50 * time.Millisecond, 5 * time.Second, false},
+		{"no timeout at all", 0, 0, false},
 	}
-	if !strings.Contains(err.Error(), "Timeout") {
-		t.Fatalf("error %q does not mention timeout", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := net.NewClient(tt.clientTimeout)
+			res, err := c.Do(&request.Request{Method: "GET", URL: srv.URL, Timeout: tt.reqTimeout}, false)
+			if !tt.wantErr {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if res.Body != "late" {
+					t.Fatalf("body = %q, want %q", res.Body, "late")
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected timeout error")
+			}
+			if !strings.Contains(err.Error(), "timed out after") {
+				t.Fatalf("error %q does not mention the timeout", err)
+			}
+		})
 	}
 }
 

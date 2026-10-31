@@ -83,6 +83,18 @@ func TestRunSingleFile(t *testing.T) {
 			wantErr:   "test.mon:3: broken: sending HTTP request",
 		},
 		{
+			name:      "skipped requests are not sent",
+			mon:       "# @skip not ready\nGET " + srv.URL + "/skipped\n###\n# @name kept\nGET " + srv.URL + "/kept\n",
+			wantPaths: []string{"/kept"},
+			wantOut:   []string{"served /kept"},
+		},
+		{
+			name:      "error names the request by @name",
+			mon:       "# @name dead\nGET " + dead + "/x\n",
+			wantPaths: nil,
+			wantErr:   "test.mon:2: dead: sending HTTP request",
+		},
+		{
 			name:      "parse error sends nothing",
 			mon:       "GET " + srv.URL + "/a\n###\nGET\n",
 			wantPaths: nil,

@@ -1,0 +1,5 @@
+# @name a
+GET http://example.com/1
+###
+# @name a
+GET http://example.com/2
