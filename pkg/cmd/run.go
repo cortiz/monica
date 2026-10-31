@@ -53,6 +53,13 @@ var (
 			} else {
 				err = runAllFiles(r, recursiveLevel)
 			}
+			if herr := r.AfterAll(); herr != nil {
+				if err == nil {
+					err = &exitError{code: ExitFailed, err: herr}
+				} else {
+					logging.Log.Error().Msg(herr.Error())
+				}
+			}
 			ferr := errors.Join(r.Finish(), closeOut())
 			if ferr != nil && err == nil {
 				err = &exitError{code: ExitFailed, err: fmt.Errorf("writing report: %w", ferr)}

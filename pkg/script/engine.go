@@ -126,28 +126,36 @@ func (e *Engine) compile(s *request.Script) (*goja.Program, error) {
 // only, interrupting it after timeout (DefaultTimeout when zero). It returns
 // the test() results recorded before it finished; failures are *Error.
 func (e *Engine) run(s *request.Script, globals map[string]any, timeout time.Duration) ([]TestResult, error) {
-	e.results = nil
 	prog, err := e.compile(s)
 	if err != nil {
 		return nil, toError(s, err)
 	}
+	return e.exec(s, globals, timeout, func() error {
+		_, err := e.rt.RunProgram(prog)
+		return err
+	})
+}
+
+// exec runs body with globals (over test and expect) set and the timeout
+// armed, then removes the globals. Errors are located in s (see toError).
+func (e *Engine) exec(s *request.Script, globals map[string]any, timeout time.Duration, body func() error) ([]TestResult, error) {
+	e.results = nil
 	all := e.installTesting()
 	for name, v := range globals {
 		all[name] = v
 	}
-	globals = all
-	for name, v := range globals {
+	for name, v := range all {
 		if err := e.rt.Set(name, v); err != nil {
 			return nil, err
 		}
 	}
 	defer func() {
-		for name := range globals {
+		for name := range all {
 			_ = e.rt.GlobalObject().Delete(name)
 		}
 	}()
 	stop := e.interruptAfter(timeout)
-	_, err = e.rt.RunProgram(prog)
+	err := body()
 	stop()
 	return e.results, toError(s, err)
 }

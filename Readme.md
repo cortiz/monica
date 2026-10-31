@@ -93,8 +93,9 @@ in a sandbox: no file system, network, timers or `process`; `require()` loads on
 project's own modules (see [Modules](#modules)). Each script runs in its own function scope;
 share data between requests with `vars`.
 
-**Order per request:** pre-request script → `{{variable}}` expansion and default headers →
-send → print response → post-response script.
+**Order per request:** `beforeEach` [hooks](#folder-hooks-monicajs) → pre-request script →
+`{{variable}}` expansion and default headers → send → print response → post-response script →
+`afterEach` hooks.
 
 | Global | Pre-request | Post-response |
 |--------|-------------|---------------|
@@ -222,6 +223,41 @@ Content-Type: application/json
   test("all items priced", () => expect(jp.query(res.json(), "$.items[*].price")).not.toContain(null));
 %}
 ```
+
+### Folder hooks (`monica.js`)
+
+A `monica.js` module in a folder exports hooks for every request in that folder and below:
+
+```js
+// api/monica.js
+const { uuid } = require("monica/random");
+
+module.exports = {
+  beforeAll() { vars.set("runId", uuid()); },
+  beforeEach() { req.headers.set("X-Run-Id", vars.get("runId")); },
+  afterEach() { test("no server error", () => expect(res.status).toBeLessThan(500)); },
+  afterAll() { console.log("done with", vars.get("runId")); },
+};
+```
+
+* **Which files** — the `monica.js` in the `.mon` file's folder and in each parent folder up to
+  the project root (the folder of `monica.yml`; without one, only the `.mon` file's folder).
+  Outer hooks run first for `before*`, last for `after*`.
+* **Per request** — `beforeEach` → pre-request script → `{{}}` expansion → send →
+  post-response script → `afterEach`. `beforeEach` sees `req` like a pre-request script (and
+  can change it); `afterEach` sees `req` and `res` like a post-response script, and runs even
+  when the post-response script failed. `test()` results are added to the request.
+* **Once per run** — a folder's `beforeAll` runs before the first request under it that is
+  actually run (not `@skip`ped or filtered out); `afterAll` runs at the end of the run, in
+  reverse order. They see `vars`, `monica`, `console`, `require` and `expect`; `test()` is not
+  available there.
+* **Failures** — a `monica.js` that doesn't load, or whose `beforeAll` throws, is reported as
+  a failed result and every request under it is skipped. A throwing `afterAll` is reported as
+  a failed result; one in `beforeEach` fails the request without sending it, one in
+  `afterEach` fails the request. Each hook call has the `scripts.timeout` budget; `async`
+  functions are not awaited.
+* The hooks module is a regular module: it can `require()` others, and scripts that
+  `require("./monica.js")` get the same instance.
 
 ## Configuration
 
