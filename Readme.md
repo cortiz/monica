@@ -41,6 +41,44 @@ Responses are printed to stdout; logs and errors go to stderr.
 
 Parse errors are reported as `file:line: message`.
 
+## Scripting
+
+Scripts are JavaScript (ES5.1 plus most of ES2015+, via [goja](https://github.com/dop251/goja))
+in a sandbox: no `require`, file system, network, timers or `process`. Each script runs in its
+own function scope; share data between requests with `vars`.
+
+**Order per request:** pre-request script → `{{variable}}` expansion and default headers →
+send → print response → post-response script.
+
+| Global | Pre-request | Post-response |
+|--------|-------------|---------------|
+| `req.method`, `req.url`, `req.body` | read/write (before `{{}}` expansion) | read-only (as sent) |
+| `req.headers.get(n)` / `.has(n)` / `.all()` | ✓ | ✓ |
+| `req.headers.set(n, v)` / `.add(n, v)` / `.delete(n)` | ✓ | throws |
+| `res.status`, `res.statusText`, `res.body`, `res.time` (ms) | – | ✓ |
+| `res.headers.get(n)` (values joined by `, `, `null` if absent) / `.has(n)` / `.all()` | – | ✓ |
+| `res.json()` (throws on invalid JSON) | – | ✓ |
+| `vars.get(n)` (`undefined` if unset) / `vars.has(n)` / `vars.set(n, v)` | ✓ | ✓ |
+| `monica.env` (selected environment or `""`) | ✓ | ✓ |
+| `console.log/info/warn/error` (to the log, secrets masked) | ✓ | ✓ |
+
+`vars.set` stores the value as a string; it is visible to every later request of the run,
+including those in later files, but `--var` still wins. A pre-request script that throws stops
+its request from being sent; a post-response script that throws fails the request (exit 1).
+
+```
+POST {{baseUrl}}/login
+Content-Type: application/json
+
+{"user": "ada"}
+
+> {% vars.set("token", res.json().token) %}
+
+###
+GET {{baseUrl}}/me
+Authorization: Bearer {{token}}
+```
+
 ## Configuration
 
 `monica.yml` holds settings and variables shared by `.mon` files. For each `.mon` file Monica
@@ -138,8 +176,7 @@ a failing request does not stop the ones after it.
   Sections with no request line (only comments or blank lines) are ignored.
   A body that ends at a separator loses its trailing blank lines; the body of the last request
   in the file is kept verbatim.
-* **Scripts** — JavaScript attached to a request. *Scripts are parsed but not run yet* (the
-  script engine is a later milestone); `monica run` warns when a request has one.
+* **Scripts** — JavaScript attached to a request (see [Scripting](#scripting)).
   * **Pre-request** — `< {% ... %}` before the request line (with comments and directives, in
     any order).
   * **Post-response** — `> {% ... %}` after the headers or after the body. It ends the body
@@ -155,7 +192,8 @@ a failing request does not stop the ones after it.
   * At most one pre-request and one post-response script per request (inline or file).
 * **Variables** — `{{name}}` in the URL, header values and body is replaced by a variable's
   value (spaces inside the braces are allowed: `{{ name }}`). Values come from, highest first:
-  `--var name=value`, the selected environment's `vars`, then `defaults.vars` (see
+  `--var name=value`, `vars.set()` in a script, the selected environment's `vars`, then
+  `defaults.vars` (see
   [Configuration](#configuration)). An unknown variable is an input error (`file:line`).
   Built-ins: `{{$uuid}}` (random v4 UUID), `{{$timestamp}}` (Unix seconds),
   `{{$randomInt}}` (0–999). Values are not expanded again, there is no escape for a literal
