@@ -224,6 +224,17 @@ func TestHooksWithoutConfigUseTheMonFolderOnly(t *testing.T) {
 	}
 }
 
+func TestRunSingleFileFailsOnAfterAll(t *testing.T) {
+	srv, _ := apiServer(t)
+	dir := t.TempDir()
+	write(t, dir, "monica.js", "exports.afterAll = () => { throw new Error('boom'); };\n")
+	mon := write(t, dir, "a.mon", "GET "+srv.URL+"/1\n")
+	err := runner.RunSingleFile(mon, &runner.Opts{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "afterAll: ") || !strings.Contains(err.Error(), "Error: boom") {
+		t.Fatalf("got %v, want the afterAll failure", err)
+	}
+}
+
 func TestHooksWithRunSingleFile(t *testing.T) {
 	// RunSingleFile (no explicit AfterAll) still runs afterAll in Finish.
 	srv, _ := apiServer(t)

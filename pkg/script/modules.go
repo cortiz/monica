@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/dop251/goja"
@@ -60,7 +61,13 @@ func NewModules(projectRoot string, paths []string) (*Modules, error) {
 		if err := add(p); err != nil {
 			return nil, fmt.Errorf("scripts.paths: %w", err)
 		}
-		m.paths = append(m.paths, m.roots[len(m.roots)-1].lexical)
+		// A config from a cloned repo must not widen the sandbox past it.
+		proj, r := m.roots[0], m.roots[len(m.roots)-1]
+		inProject := (within(r.lexical, proj.lexical) || within(r.lexical, proj.real)) && within(r.real, proj.real)
+		if !inProject {
+			return nil, fmt.Errorf("scripts.paths: %s is outside the project folder %s", r.lexical, proj.lexical)
+		}
+		m.paths = append(m.paths, r.lexical)
 	}
 	m.reg = require.NewRegistry(
 		require.WithLoader(m.load),
@@ -81,6 +88,11 @@ func resolvePath(base, path string) string {
 	return p
 }
 
+// within reports whether the absolute path p is dir or below it.
+func within(p, dir string) bool {
+	return p == dir || strings.HasPrefix(p, strings.TrimSuffix(dir, string(filepath.Separator))+string(filepath.Separator))
+}
+
 // inside reports whether the absolute path p is in one of the roots;
 // real selects the symlink-resolved form of the roots.
 func (m *Modules) inside(p string, real bool) bool {
@@ -89,21 +101,19 @@ func (m *Modules) inside(p string, real bool) bool {
 		if real {
 			dir = r.real
 		}
-		if p == dir || strings.HasPrefix(p, dir+string(filepath.Separator)) {
-			return true
-		}
-		if !real && (p == r.real || strings.HasPrefix(p, r.real+string(filepath.Separator))) {
+		if within(p, dir) || !real && within(p, r.real) {
 			return true
 		}
 	}
 	return false
 }
 
-// errOutside is returned for a module that is in a root but links out of it.
-type errOutside struct{ path, target string }
+// errOutside is returned for a module that is in a root but links out of
+// it. The link's target is not shown.
+type errOutside struct{ path string }
 
 func (e *errOutside) Error() string {
-	return fmt.Sprintf("%s links to %s, outside the project root and scripts.paths", e.path, e.target)
+	return fmt.Sprintf("%s links outside the project root and scripts.paths", e.path)
 }
 
 // load is the sandboxed SourceLoader. Paths outside the roots don't exist
@@ -121,7 +131,7 @@ func (m *Modules) load(path string) ([]byte, error) {
 		return nil, err
 	}
 	if !m.inside(real, true) {
-		return nil, &errOutside{path: path, target: real}
+		return nil, &errOutside{path: path}
 	}
 	return require.DefaultSourceLoader(real)
 }
@@ -139,16 +149,19 @@ func (e *Engine) installRequire(m *Modules) {
 	e.require = m.reg.Enable(e.rt)
 	_ = e.rt.Set("require", func(call goja.FunctionCall) goja.Value {
 		name := e.argString(call, "require", 0)
+		target := name
 		if isFilePath(name) {
+			// Resolve here, so the check and the load use the same path.
 			base := ""
 			if !filepath.IsAbs(name) {
 				base = e.callerDir()
 			}
-			if target := resolvePath(base, name); !m.inside(target, false) {
+			target = resolvePath(base, name)
+			if !m.inside(target, false) {
 				e.throwError("require(%q): %s is outside the project root and scripts.paths", name, target)
 			}
 		}
-		v, err := e.require.Require(name)
+		v, err := e.require.Require(target)
 		if err != nil {
 			var (
 				ex   *goja.Exception
@@ -201,17 +214,36 @@ var moduleSyntaxRe = regexp.MustCompile(`^(?:SyntaxError: )?(.+): Line (\d+):(\d
 func moduleErrorText(err error) string {
 	msg := err.Error()
 	if m := moduleSyntaxRe.FindStringSubmatch(msg); m != nil {
-		return fmt.Sprintf("%s:%s:%s: SyntaxError: %s", m[1], m[2], m[3], m[4])
+		line, _ := strconv.Atoi(m[2])
+		col, _ := strconv.Atoi(m[3])
+		return fmt.Sprintf("%s:%d:%d: SyntaxError: %s", m[1], line, moduleColumn(line, col), m[4])
 	}
 	return msg
+}
+
+// moduleWrapper is what goja_nodejs puts before a module's first line.
+const moduleWrapper = "(function(exports,require,module,__filename,__dirname){"
+
+// moduleColumn maps a column reported for a module's source back to the
+// file's own column (only line 1 is shifted by the wrapper).
+func moduleColumn(line, col int) int {
+	if line == 1 && col > len(moduleWrapper) {
+		return col - len(moduleWrapper)
+	}
+	return col
 }
 
 // callerDir is the folder of the script calling the current native
 // function, the base for relative require() paths.
 func (e *Engine) callerDir() string {
-	frames := e.rt.CaptureCallStack(2, nil)
-	if len(frames) < 2 {
-		return "."
+	// Skip require itself ("<native>") and code from eval() or
+	// new Function() ("<eval>"): resolve against the file that ran it, not
+	// the working directory.
+	for _, f := range e.rt.CaptureCallStack(0, nil) {
+		if name := f.SrcName(); name != "" && name != "<native>" && name != "<eval>" {
+			return filepath.Dir(name)
+		}
 	}
-	return filepath.Dir(frames[1].SrcName())
+	e.throwError("require: relative paths need a calling file")
+	return ""
 }
