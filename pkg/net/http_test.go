@@ -1,6 +1,7 @@
 package net_test
 
 import (
+	"net/http"
 	"testing"
 
 	"jmpeax.com/sec/monica/pkg/net"
@@ -11,8 +12,8 @@ func TestHTTPRequest(t *testing.T) {
 	req := &request.Request{
 		Method: "GET",
 		URL:    "https://httpbin.org/status/200",
-		Headers: map[string]string{
-			"Content-Type": "application/json",
+		Headers: http.Header{
+			"Content-Type": {"application/json"},
 		},
 		Body: "",
 	}
