@@ -24,7 +24,7 @@ build: generate
 # Runs the project.
 .PHONY: run
 run:
-	./$(BiNARY_NAME)
+	./$(BINARY_NAME)
 
 # Tests the project.
 .PHONY: test
@@ -36,7 +36,6 @@ test: generate
 clean:
 	$(GOCLEAN)
 	rm -f $(BINARY_NAME)
-	rm -f $(BINARY_UNIX)
 
 # Installs the dependencies.
 .PHONY: deps
@@ -48,18 +47,24 @@ deps:
 fmt:
 	$(GOCMD) fmt ./...
 
+# Fails if any file is not gofmt-formatted (used by CI; does not modify files).
+.PHONY: fmt-check
+fmt-check:
+	@unformatted="$$(gofmt -l .)"; \
+	if [ -n "$$unformatted" ]; then echo "Not gofmt-formatted:"; echo "$$unformatted"; exit 1; fi
+
 # Runs static analysis on the code.
 .PHONY: lint
 lint:
-	golint ./...
+	golangci-lint run ./...
 
 .PHONY: release
 release: build-deps pr lint
-	goreleaser release --rm-dist
+	goreleaser release --clean
 
 .PHONY: pr
-pr: generate test fmt
-	echo "All checks passed"
+pr: generate test fmt-check
+	@echo "All checks passed"
 
 .PHONY: generate
 generate:
@@ -69,13 +74,14 @@ generate:
 .PHONY: help
 help:
 	@echo "Available targets:"
-	@echo "  all           - Runs the 'test' and 'build' targets."
-	@echo "  build         - Compiles the project and generates an executable named '$(BINARY_NAME)'."
-	@echo "  run           - Executes the compiled binary '$(BINARY_NAME)'."
-	@echo "  test          - Runs all tests in the project."
-	@echo "  clean         - Cleans up the project by removing the compiled binaries and any temporary files."
-	@echo "  deps          - Installs or updates the project dependencies."
-	@echo "  fmt           - Formats the Go code according to the Go style guidelines."
-	@echo "  lint          - Runs static analysis on the code to identify potential issues."
-	@echo "	build-deps     - Installs the dependencies needed to build the project."
-	@echo " release			   - Creates a ignition Release."
+	@echo "  build       - Compiles the project into '$(BINARY_NAME)'."
+	@echo "  run         - Executes the compiled binary '$(BINARY_NAME)'."
+	@echo "  test        - Runs all tests (offline-safe) with coverage."
+	@echo "  clean       - Removes the compiled binary."
+	@echo "  deps        - Updates the project dependencies."
+	@echo "  fmt         - Formats the Go code."
+	@echo "  fmt-check   - Fails if any Go file is not gofmt-formatted."
+	@echo "  lint        - Runs golangci-lint."
+	@echo "  pr          - PR gate: generate + test + fmt-check."
+	@echo "  build-deps  - Installs the tools needed to release."
+	@echo "  release     - Creates a release with goreleaser."
