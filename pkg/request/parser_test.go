@@ -271,6 +271,24 @@ func TestParseMonFile(t *testing.T) {
 			},
 		},
 		{
+			name: "script files",
+			file: "testdata/script_files.mon",
+			want: []*request.Request{{
+				File:       "testdata/script_files.mon",
+				Line:       2,
+				Method:     "GET",
+				URL:        "http://example.com/users",
+				Headers:    http.Header{},
+				PreScript:  &request.Script{Source: "vars.set(\"ts\", Date.now());\n", File: "testdata/scripts/pre.js", Line: 1},
+				PostScript: &request.Script{Source: "test(\"lists users\", () => {\n  expect(res.status).toBe(200);\n});\n", File: "testdata/scripts/users_test.js", Line: 1},
+			}},
+		},
+		{
+			name:    "script file that does not exist",
+			file:    "testdata/script_file_missing.mon",
+			wantErr: "testdata/script_file_missing.mon:2: reading post-response script: open testdata/scripts/missing.js",
+		},
+		{
 			name:    "unterminated script block swallows separators",
 			file:    "testdata/script_unterminated.mon",
 			wantErr: "testdata/script_unterminated.mon:3: unterminated post-response script (missing \"%}\")",
@@ -473,6 +491,13 @@ func TestParseRequest(t *testing.T) {
 				PostScript: &request.Script{Source: " t() ", Line: 5},
 			}),
 		},
+		{
+			name: "body line starting with > that is not a .js file is body text",
+			raw:  "POST http://a.example/\n\n> notes.txt\n>  two words.js\n",
+			want: one(request.Request{Method: "POST", URL: "http://a.example/", Headers: http.Header{}, Body: "> notes.txt\n>  two words.js\n"}),
+		},
+		{name: "pre-request file that is not .js", raw: "< ./pre.txt\nGET http://a.example/\n", wantErr: "line 1: invalid pre-request script \"./pre.txt\""},
+		{name: "inline and file post scripts together", raw: "GET http://a.example/\n> {% a %}\n> testdata/scripts/pre.js\n", wantErr: "line 3: duplicate post-response script"},
 		{name: "text after closing %}", raw: "< {% a() %} b\nGET http://a.example/\n", wantErr: "line 1: unexpected text after \"%}\""},
 		{name: "pre-request line without a block", raw: "< nope\nGET http://a.example/\n", wantErr: "line 1: invalid pre-request script \"nope\""},
 		{name: "duplicate pre-request script", raw: "< {% a %}\n< {% b %}\nGET http://a.example/\n", wantErr: "line 2: duplicate pre-request script"},
@@ -536,6 +561,26 @@ func TestParseBodyFileAbsolutePath(t *testing.T) {
 			checkResult(t, got, err, want, "")
 		})
 	}
+}
+
+func TestParseScriptFileErrors(t *testing.T) {
+	_, err := request.ParseMonFile("testdata/script_file_missing.mon")
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("expected fs.ErrNotExist, got %v", err)
+	}
+}
+
+func TestParseScriptFileAbsolutePathCRLF(t *testing.T) {
+	js := filepath.Join(t.TempDir(), "check.js")
+	if err := os.WriteFile(js, []byte("a();\r\nb();\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := request.ParseRequest("GET http://a.example/\n\n>   " + js + "  \n")
+	want := []*request.Request{{
+		Line: 1, Method: "GET", URL: "http://a.example/", Headers: http.Header{},
+		PostScript: &request.Script{Source: "a();\nb();\n", File: js, Line: 1},
+	}}
+	checkResult(t, got, err, want, "")
 }
 
 func TestLabel(t *testing.T) {

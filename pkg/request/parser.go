@@ -251,13 +251,18 @@ func bodyFileRef(body []string) (string, bool) {
 	return path, path != ""
 }
 
-// loadBodyFile replaces req's body with the contents of path, resolved
-// relative to the .mon file's directory (or the working directory for raw
-// input).
-func (p *parser) loadBodyFile(req *Request, path string) error {
+// resolve makes a path from the .mon source relative to the .mon file's
+// directory (or the working directory for raw input).
+func (p *parser) resolve(path string) string {
 	if !filepath.IsAbs(path) && p.file != "" {
-		path = filepath.Join(filepath.Dir(p.file), path)
+		return filepath.Join(filepath.Dir(p.file), path)
 	}
+	return path
+}
+
+// loadBodyFile replaces req's body with the contents of path.
+func (p *parser) loadBodyFile(req *Request, path string) error {
+	path = p.resolve(path)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return &ParseError{File: p.file, Line: p.bodyLine, Msg: fmt.Sprintf("reading body file: %v", err), Err: err}
