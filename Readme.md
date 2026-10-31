@@ -315,6 +315,7 @@ envs:                       # each env merges over defaults
 scripts:
   timeout: 5s               # per script run (default 5s)
   paths: [./lib]            # folders for require("name"), inside monica.yml's folder
+order: [auth/login.mon, users]  # run these first (see Run order)
 load:                       # reserved for load testing (not used yet)
   vus: 50
   duration: 30s
@@ -335,6 +336,17 @@ load:                       # reserved for load testing (not used yet)
 * **`monica.local.yml`** next to `monica.yml` deep-merges on top of it (`version` optional).
   Keep it and `.env` out of version control for personal or secret values.
 * Default header values may use `{{name}}`; variable values are used literally.
+
+### Run order
+
+`monica run` runs files in a fixed order: sorted by path, folder by folder and by name at each
+level (so `a/x.mon` runs before `a.mon`, which runs before `b/y.mon`). Requests run in file
+order. To run some files first, list them in `order:` in `monica.yml`: each entry is a
+`.mon` file or a folder, relative to the config's folder. Files matching an entry run first,
+in list order (the first matching entry counts; a folder's files keep path order); the rest
+follow in path order. `order` applies to the files that config governs; with several
+`monica.yml` files, each orders its own files. An entry that places no file is logged as a
+warning. `monica.local.yml` replaces the whole list.
 
 ## Mon file format
 ```
