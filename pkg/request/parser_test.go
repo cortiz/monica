@@ -4,6 +4,8 @@ import (
 	"errors"
 	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -188,6 +190,42 @@ func TestParseMonFile(t *testing.T) {
 					Headers: http.Header{},
 				},
 			},
+		},
+		{
+			name: "body from file",
+			file: "testdata/body_file.mon",
+			want: []*request.Request{
+				{
+					File:     "testdata/body_file.mon",
+					Line:     1,
+					Method:   "POST",
+					URL:      "http://example.com/users",
+					Headers:  http.Header{"Content-Type": {"application/json"}},
+					Body:     "{\"name\": \"ada\"}\n",
+					BodyFile: "testdata/payloads/user.json",
+				},
+				{
+					File:    "testdata/body_file.mon",
+					Line:    7,
+					Method:  "PUT",
+					URL:     "http://example.com/users/1",
+					Headers: http.Header{},
+					Body:    "<./not-a-ref\n",
+				},
+				{
+					File:    "testdata/body_file.mon",
+					Line:    11,
+					Method:  "POST",
+					URL:     "http://example.com/notes",
+					Headers: http.Header{},
+					Body:    "< ./payloads/user.json\nand a second line\n",
+				},
+			},
+		},
+		{
+			name:    "body file that does not exist",
+			file:    "testdata/body_file_missing.mon",
+			wantErr: "testdata/body_file_missing.mon:3: reading body file: open testdata/payloads/missing.json",
 		},
 		{
 			name:    "duplicate request name",
@@ -385,6 +423,37 @@ func TestParseRequest(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := request.ParseRequest(tt.raw)
 			checkResult(t, got, err, tt.want, tt.wantErr)
+		})
+	}
+}
+
+func TestParseBodyFileErrors(t *testing.T) {
+	_, err := request.ParseMonFile("testdata/body_file_missing.mon")
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("expected fs.ErrNotExist, got %v", err)
+	}
+}
+
+func TestParseBodyFileAbsolutePath(t *testing.T) {
+	payload := filepath.Join(t.TempDir(), "payload.bin")
+	if err := os.WriteFile(payload, []byte("raw\x00bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{"space after <", "POST http://a.example/\n\n< " + payload + "\n"},
+		{"tab after <, CRLF, trailing blank lines", "POST http://a.example/\r\n\r\n<\t" + payload + "\r\n\r\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := request.ParseRequest(tt.raw)
+			want := []*request.Request{{
+				Line: 1, Method: "POST", URL: "http://a.example/", Headers: http.Header{},
+				Body: "raw\x00bytes", BodyFile: payload,
+			}}
+			checkResult(t, got, err, want, "")
 		})
 	}
 }

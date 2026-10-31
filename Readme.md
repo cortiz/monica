@@ -65,6 +65,10 @@ a failing request does not stop the ones after it.
   value. Header names are case-insensitive.
 * **Body** — everything after the first blank line, kept verbatim (including lines starting
   with `#` and trailing newlines). With no blank line the request has no body.
+* **Body from file** — a body that is a single line `< path` (a space or tab after `<`) is
+  replaced by the contents of that file, byte for byte. Relative paths are resolved from the
+  `.mon` file's directory. A missing file is an input error (`file:line`). Any other body,
+  including one with more lines after the `< path` line, is sent literally.
 * **Separator** — any line starting with `###` ends the current request and starts a new one,
   even inside a body. Text after the `###` is the request's title (used in logs and errors).
   Sections with no request line (only comments or blank lines) are ignored.
@@ -104,4 +108,12 @@ POST http://example.com/users
 Content-Type: application/json
 
 {"name": "ada"}
+```
+
+```
+### Create user from a payload file
+POST http://example.com/users
+Content-Type: application/json
+
+< ./payloads/user.json
 ```
