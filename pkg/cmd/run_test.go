@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,7 +26,8 @@ func runCLI(t *testing.T, args ...string) (code int, stdout, stderr string) {
 	// Flags are package-level; reset them so tests don't leak into each other.
 	singleFile, recursiveLevel = "", 1
 	envName, varFlags, configPath = "", nil, ""
-	for _, name := range []string{"env", "var", "config", "single", "recursive"} {
+	reporterName, outPath = "console", ""
+	for _, name := range []string{"env", "var", "config", "single", "recursive", "reporter", "out"} {
 		if f := run.Flags().Lookup(name); f != nil {
 			f.Changed = false
 		}
@@ -183,4 +185,70 @@ func TestRunConfigFlags(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRunReporters(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"ok": true}`))
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	mon := writeMon(t, dir, "api.mon", "# @name ping\nGET "+srv.URL+"/\n> {%\n  test(\"ok\", () => expect(res.json().ok).toBe(true));\n  test(\"fails\", () => expect(res.status).toBe(500));\n%}\n")
+
+	t.Run("json to stdout", func(t *testing.T) {
+		code, stdout, stderr := runCLI(t, "run", "-s", mon, "--reporter", "json")
+		if code != ExitFailed {
+			t.Fatalf("exit = %d, want %d (stderr %s)", code, ExitFailed, stderr)
+		}
+		var doc struct {
+			Summary struct{ Tests, TestsFailed int } `json:"summary"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+			t.Fatalf("stdout is not only JSON: %v\n%s", err, stdout)
+		}
+		if doc.Summary.Tests != 2 || doc.Summary.TestsFailed != 1 {
+			t.Fatalf("summary = %+v", doc.Summary)
+		}
+	})
+
+	t.Run("junit to file keeps console on stdout", func(t *testing.T) {
+		out := filepath.Join(dir, "report.xml")
+		code, stdout, _ := runCLI(t, "run", "-s", mon, "--reporter", "junit", "--out", out)
+		if code != ExitFailed {
+			t.Fatalf("exit = %d", code)
+		}
+		if !strings.Contains(stdout, "✗ ping") {
+			t.Fatalf("console report missing from stdout: %s", stdout)
+		}
+		xmlData, err := os.ReadFile(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(xmlData), `<testcase name="fails"`) || !strings.Contains(string(xmlData), `failures="1"`) {
+			t.Fatalf("junit report: %s", xmlData)
+		}
+	})
+
+	t.Run("console to file", func(t *testing.T) {
+		out := filepath.Join(dir, "report.txt")
+		_, stdout, _ := runCLI(t, "run", "-s", mon, "-o", out)
+		data, _ := os.ReadFile(out)
+		if stdout != "" || !strings.Contains(string(data), "✗ ping") {
+			t.Fatalf("stdout=%q file=%q", stdout, data)
+		}
+	})
+
+	t.Run("invalid reporter", func(t *testing.T) {
+		code, _, stderr := runCLI(t, "run", "-s", mon, "--reporter", "xml")
+		if code != ExitUsage || !strings.Contains(stderr, `invalid --reporter "xml"`) {
+			t.Fatalf("exit=%d stderr=%s", code, stderr)
+		}
+	})
+
+	t.Run("unwritable out", func(t *testing.T) {
+		code, _, stderr := runCLI(t, "run", "-s", mon, "--out", filepath.Join(dir, "missing-dir", "r.xml"))
+		if code != ExitUsage || !strings.Contains(stderr, "creating report file") {
+			t.Fatalf("exit=%d stderr=%s", code, stderr)
+		}
+	})
 }
