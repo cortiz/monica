@@ -1,0 +1,5 @@
+# Request line with HTTP version
+PUT https://example.com/items/1 HTTP/1.1
+Content-Type: application/json
+
+{"id":1}

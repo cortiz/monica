@@ -1,0 +1,8 @@
+# Body is kept verbatim, including "#" lines and trailing newlines
+POST http://example.com/notes
+Content-Type: text/markdown
+
+# Title
+
+line after blank
+

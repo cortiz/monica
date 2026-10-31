@@ -29,15 +29,26 @@ Responses are printed to stdout; logs and errors go to stderr.
 Parse errors are reported as `file:line: message`.
 
 ## Mon file format
- Lines starting with `#` are considered comments and are ignored.
-### HTTP Request
 ```
-#Comment
-HTTP METHOD URL
-HEADERS
+# Comment
+METHOD URL [HTTP/x.y]
+Header-Name: value
+Header-Name: another value
 
 BODY
 ```
+
+* **Comments** — lines starting with `#` before the body are ignored (before the request
+  line and between headers). Blank lines before the request line are ignored too.
+* **Request line** — `METHOD URL`, optionally followed by an HTTP version such as `HTTP/1.1`.
+  The method must be a valid HTTP token; the URL must be absolute with an `http`/`https`
+  scheme and a host.
+* **Headers** — one `Name: value` per line, split on the first `:` only, so values may contain
+  colons (`X-Foo: a: b`). Spaces around the value are trimmed. Repeated headers keep every
+  value. Header names are case-insensitive.
+* **Body** — everything after the first blank line, kept verbatim (including lines starting
+  with `#` and trailing newlines). With no blank line the request has no body.
+* Both `\n` and `\r\n` line endings are accepted.
 
 #### Example
 ```
@@ -50,7 +61,7 @@ User-Agent: monica/0.1.0
 
 ```
 # Simple POST HTTP Request
-GET http://httpbin.org/anything
+POST http://httpbin.org/anything
 Host: httpbin.org
 User-Agent: monica/0.1.0
 

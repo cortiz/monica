@@ -1,0 +1,5 @@
+# Header values may contain colons; spaces around values are trimmed
+GET http://example.com/
+X-Foo: a: b
+X-Spaced:    padded value   
+Authorization:Bearer abc:def

@@ -1,0 +1,2 @@
+# Unknown HTTP version token
+GET http://example.com/ HTTX/1.1
