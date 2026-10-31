@@ -31,10 +31,11 @@ type Runner struct {
 	projects map[string]*project // by config path; "" = no config
 }
 
-// project is a resolved config and the client built from it.
+// project is a resolved config and what is built from it.
 type project struct {
 	settings *config.Resolved
 	client   *net.Client
+	mask     masker
 }
 
 // New returns a Runner writing responses to out.
@@ -78,15 +79,16 @@ func (r *Runner) RunFile(file string) error {
 		}
 		rendered, err := r.render(req, p.settings)
 		if err != nil {
-			errs = append(errs, &InputError{Err: err})
+			errs = append(errs, &InputError{Err: p.mask.Error(err)})
 			continue
 		}
 		res, err := p.client.Do(rendered, r.opts.HeaderOnly)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("%s: %s: %w", where, req.Label(), err))
+			errs = append(errs, p.mask.Error(fmt.Errorf("%s: %s: %w", where, req.Label(), err)))
 			continue
 		}
-		if _, err := fmt.Fprintln(r.out, res); err != nil {
+		logging.Log.Debug().Msg(p.mask.String(fmt.Sprintf("%s %s -> %d in %s", rendered.Method, rendered.URL, res.StatusCode, res.Duration)))
+		if _, err := fmt.Fprintln(r.out, p.mask.String(res.String())); err != nil {
 			return err
 		}
 	}
@@ -156,6 +158,7 @@ func (r *Runner) project(file string) (*project, error) {
 			NoFollowRedirects:  !settings.FollowRedirects,
 			InsecureSkipVerify: settings.InsecureSkipVerify,
 		}),
+		mask: newMasker(settings.Secrets),
 	}
 	r.projects[path] = p
 	return p, nil

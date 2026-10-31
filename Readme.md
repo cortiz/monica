@@ -81,6 +81,10 @@ load:                       # reserved for load testing (not used yet)
 * **`${NAME}`** in header and variable values is read from the OS environment, then from a
   `.env` file next to `monica.yml` (`KEY=VALUE` lines, `#` comments, optional `export` and
   quotes). An unset name is an error. Use quotes in flow-style YAML (`{ pass: "${X}" }`).
+* **Secret masking** — every value substituted for a `${NAME}` is printed as `****` in
+  responses, error messages and logs (the request itself is sent with the real value). Values
+  are masked wherever they appear, so a short or common value (e.g. `true`) masks those
+  characters everywhere; `--var` values are not masked.
 * **`monica.local.yml`** next to `monica.yml` deep-merges on top of it (`version` optional).
   Keep it and `.env` out of version control for personal or secret values.
 * Default header values may use `{{name}}`; variable values are used literally.
