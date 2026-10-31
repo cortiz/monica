@@ -1,0 +1,12 @@
+###
+# section with only a comment
+
+###
+GET http://example.com/a
+###
+###
+
+GET http://example.com/b
+X-A: 1
+
+# a body line, not a comment
