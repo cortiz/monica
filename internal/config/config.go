@@ -46,8 +46,8 @@ type Settings struct {
 type Scripts struct {
 	// Timeout bounds each script run; zero means the engine default (5s).
 	Timeout Duration `yaml:"timeout"`
-	// Paths are folders (relative to the config file) searched by
-	// require("name") and allowed besides the project root.
+	// Paths are folders (relative to the config file, and inside its
+	// folder) searched first by require("name").
 	Paths []string `yaml:"paths"`
 }
 

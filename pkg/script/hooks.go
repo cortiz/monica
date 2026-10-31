@@ -141,6 +141,7 @@ func (h *Hooks) locate(err error) error {
 	var se *Error
 	if errors.As(err, &se) && se.File == h.abs {
 		se.File = h.file
+		se.Column = moduleColumn(se.Line, se.Column)
 	}
 	return err
 }
@@ -151,6 +152,7 @@ func isJSError(err error) bool {
 	var (
 		ex   *goja.Exception
 		intr *goja.InterruptedError
+		so   *goja.StackOverflowError
 	)
-	return errors.As(err, &ex) || errors.As(err, &intr)
+	return errors.As(err, &ex) || errors.As(err, &intr) || errors.As(err, &so)
 }

@@ -111,6 +111,8 @@ func TestHookErrors(t *testing.T) {
 		{"beforeAll throws", "exports.beforeAll = () => {\n  throw new Error('nope');\n};", BeforeAll, "Error: nope", 2},
 		{"test() in beforeAll", "exports.beforeAll = () => {\n  test('x', () => {});\n};", BeforeAll, "test() is not available in beforeAll", 2},
 		{"expect in afterAll", "exports.afterAll = () => {\n  expect(1).toBe(2);\n};", AfterAll, "expected 1 to be 2", 2},
+		{"stack overflow while loading", "function f() { return f() + 1; }\nf();", "", "RangeError: Maximum call stack size exceeded", 1},
+		{"line 1 columns are the file's own", "exports.beforeAll = () => { throw new Error('c'); };", BeforeAll, "monica.js:1:35: Error: c", 1}, // the new Error() site,
 		{"req is not defined in beforeAll", "exports.beforeAll = () => req.url;", BeforeAll, "ReferenceError: req is not defined", 1},
 	}
 	for _, tt := range tests {

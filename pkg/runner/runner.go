@@ -82,7 +82,7 @@ func NewWithReporter(opts *Opts, rep report.Reporter) *Runner {
 // RunSingleFile runs one file with a fresh Runner and finishes the report.
 func RunSingleFile(file string, opts *Opts, out io.Writer) error {
 	r := New(opts, out)
-	err := r.RunFile(file)
+	err := errors.Join(r.RunFile(file), r.AfterAll())
 	if ferr := r.Finish(); ferr != nil && err == nil {
 		err = ferr
 	}
