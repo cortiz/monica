@@ -46,6 +46,13 @@ func TestRequire(t *testing.T) {
 		{"folder index.js", `console.log(require("./lib/dir"))`, "from index.js"},
 		{"bare name from scripts.paths", `console.log(require("greet")("ada"))`, "hello ada"},
 		{"absolute path inside the root", `console.log(require(` + jsString(abs) + `).double(5))`, "10"},
+		{"package.json main", `console.log(require("fake-pkg").name)`, "fake-pkg"},
+		{"nested node_modules of a package", `console.log(require("fake-pkg").dep)`, "dep-pkg (nested)"},
+		{"package subpath", `console.log(require("fake-pkg/lib/util").shout("hi"))`, "HI"},
+		{"package index.js", `console.log(require("idx-pkg"))`, "idx-pkg"},
+		{"scoped package", `console.log(require("@scope/scoped"))`, "scoped"},
+		{"UMD package", `console.log(require("umd-pkg").version)`, "1.2.3"},
+		{"node_modules found from a subfolder", `console.log(require("./sub/deep/use"))`, "fake-pkg from sub/deep"},
 		{"same instance on every require", `console.log(require("./lib/counter").next(), require("./lib/counter.js").next())`, "1 2"},
 	}
 	for _, tt := range tests {
@@ -70,6 +77,9 @@ func TestRequireErrors(t *testing.T) {
 	}{
 		{"missing file", `require("./lib/nope")`, 1, []string{`Error: require("./lib/nope"): cannot find module`}},
 		{"missing package", `require("left-pad")`, 1, []string{`require("left-pad"): cannot find module`}},
+		{"node_modules above the project root", `require("above-pkg")`, 1, []string{`require("above-pkg"): cannot find module`}},
+		{"node core module", `require("fs")`, 1, []string{`require("fs"): Node.js core modules are not available`}},
+		{"node: prefixed core module", `require("node:crypto")`, 1, []string{`require("node:crypto"): Node.js core modules are not available`}},
 		{"relative path traversal", "\nrequire('../outside/secret.js')", 2, []string{`require("../outside/secret.js")`, "outside the project root and scripts.paths"}},
 		{"absolute path outside", `require("/etc/passwd")`, 1, []string{`/etc/passwd is outside the project root`}},
 		{"traversal from inside a module", `require("./lib/escape")`, 1, []string{`require("../../outside/secret.js")`, "outside the project root"}},

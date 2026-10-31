@@ -162,13 +162,25 @@ func (e *Engine) installRequire(m *Modules) {
 			case errors.As(err, &ex):
 				panic(ex) // thrown by the module itself
 			}
-			if errors.Is(err, require.InvalidModuleError) {
+			if errors.Is(err, require.InvalidModuleError) || errors.Is(err, require.NoSuchBuiltInModuleError) {
+				if nodeCore[strings.TrimPrefix(name, require.NodePrefix)] {
+					e.throwError("require(%q): Node.js core modules are not available (only pure-JS CommonJS packages work)", name)
+				}
 				e.throwError("require(%q): cannot find module", name)
 			}
 			e.throwError("require(%q): %s", name, moduleErrorText(err))
 		}
 		return v
 	})
+}
+
+// nodeCore lists the Node.js core modules people commonly reach for, to
+// explain why they fail rather than just "cannot find module".
+var nodeCore = map[string]bool{
+	"assert": true, "buffer": true, "child_process": true, "crypto": true, "dns": true,
+	"events": true, "fs": true, "http": true, "https": true, "net": true, "os": true,
+	"path": true, "process": true, "querystring": true, "stream": true, "timers": true,
+	"tls": true, "url": true, "util": true, "zlib": true, "fs/promises": true,
 }
 
 // throwError throws a plain JS Error, like Node's require() does.
