@@ -86,8 +86,12 @@ a failing request does not stop the ones after it.
     the next `###`. A body line starting with `>` that is not `> {%` is ordinary body text.
   * A block may be one line (`< {% code %}`) or span lines up to the first `%}`; inside a block
     every line is code, including lines starting with `#` or `###`. Nothing but spaces may
-    follow `%}`, and `%}` cannot appear inside the code. At most one script of each kind per
-    request.
+    follow `%}`, and `%}` cannot appear inside the code.
+  * **Script files** — `< ./pre.js` / `> ./tests/users.js` load the script from a file instead
+    (a single path ending in `.js`; relative paths resolve from the `.mon` file's directory).
+    A missing file is an input error. In a body, `>` lines that are not `> {%` or a `.js`
+    path stay body text.
+  * At most one pre-request and one post-response script per request (inline or file).
 * Both `\n` and `\r\n` line endings are accepted.
 
 #### Example
@@ -146,4 +150,11 @@ Content-Type: application/json
 > {%
   test("logged in", () => expect(res.status).toBe(200));
 %}
+```
+
+```
+### List users, tests in a file
+GET http://example.com/users
+
+> ./tests/users.js
 ```
