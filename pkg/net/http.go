@@ -126,6 +126,5 @@ func (c *Client) Do(request *request.Request, headerOnly bool) (*HTTPResponse, e
 		response.Body = string(bodyBytes)
 	}
 	response.Duration = time.Since(start)
-	logging.Log.Debug().Msgf("%s %s -> %d in %s", request.Method, request.URL, resp.StatusCode, response.Duration)
 	return response, nil
 }

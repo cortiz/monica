@@ -75,7 +75,7 @@ envs:
 			name:    "env vars, default headers and ${NAME}",
 			mon:     "GET {{baseUrl}}/item/{{ id }}\n",
 			opts:    runner.Opts{Env: "dev"},
-			wantOut: "path=/item/dev-1 default=d-dev-1 ua=custom/1 token=t0k",
+			wantOut: "path=/item/dev-1 default=d-dev-1 ua=custom/1 token=****", // echoed secret is masked
 		},
 		{
 			name:    "--var beats config vars",
