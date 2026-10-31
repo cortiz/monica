@@ -1,0 +1,269 @@
+# Monica Roadmap
+
+Goal: one Go binary that **runs HTTP requests** (like curl/Bruno), **tests them with
+JavaScript** (embedded goja, no Node.js), and **load-tests** the same files (like k6).
+
+Each task is sized to be one PR: code + `testdata/*.mon` fixture + table-driven tests +
+`Readme.md` update when the `.mon` format or CLI changes (see `CLAUDE.md`).
+
+Legend: **S** < half a day · **M** ~1 day · **L** 2–3 days · 🔒 needs dependency approval
+
+---
+
+## Phase 0 — Foundations (fix what exists)
+
+The current code has bugs that every later phase builds on. Fix them first.
+
+| ID | Task | Size |
+|----|------|------|
+| 0.1 | Error handling end-to-end | M |
+| 0.2 | Parser correctness fixes | S |
+| 0.3 | HTTP client hardening | S |
+| 0.4 | Tooling cleanup | S |
+
+**0.1 Error handling end-to-end**
+- `ParseRequest`/`ParseMonFile` return `(*Request, error)`; no logging-and-return-nil.
+  Today a missing file returns `nil` → `net.HTTPRequest(nil, …)` panics.
+- `runner.RunSingleFile` returns an error; `run` command uses `RunE`.
+- Exit code: `0` all ok, `1` any request/test failed, `2` usage/config error.
+- Parse errors include `file:line`.
+- ✅ Done when: missing file / bad request line produce a clear message and non-zero exit; tests cover each.
+
+**0.2 Parser correctness fixes**
+- Header split on first `:` only (`strings.Cut`), trim spaces; `X-Foo: a: b` currently dropped.
+- Headers become `http.Header`-style (`map[string][]string`) so repeated headers survive.
+- Body has a spurious leading `\n` (join bug) — fix and preserve trailing content exactly.
+- Request line: support optional `HTTP/1.1` suffix; validate method + URL.
+- Fix `testdata/simple_post.mon` + Readme example (says POST, uses GET).
+- ✅ Done when: table-driven tests cover each case with fixtures.
+
+**0.3 HTTP client hardening**
+- One shared `*http.Client` with a timeout (configurable later in 2.x).
+- Don't always `Add` a second `User-Agent`; only set default when absent.
+- Response: keep `Duration`, sorted headers on print, `http.Header` type.
+- Move httpbin tests behind `httptest.Server` so `go test ./...` works offline.
+
+**0.4 Tooling cleanup**
+- Makefile: `$(BiNARY_NAME)` typo, `golint` → `golangci-lint run ./...`, goreleaser `--rm-dist` → `--clean`.
+- CI runs `go test ./...` offline-safe after 0.3.
+
+---
+
+## Phase 1 — `.mon` format v2
+
+| ID | Task | Size |
+|----|------|------|
+| 1.1 | Multiple requests per file | M |
+| 1.2 | Named requests & metadata | S |
+| 1.3 | Script blocks (parse only) | M |
+| 1.4 | Body from file | S |
+
+**1.1 Multiple requests per file** — separator line `###` (optional title after it).
+`ParseMonFile` returns `[]*Request`; runner executes in order.
+
+**1.2 Named requests & metadata** — `# @name login`, `# @timeout 5s`, `# @skip`.
+Name is used in reports and for chaining (Phase 6).
+
+**1.3 Script blocks (parse only, no execution yet)**
+```
+< {%  /* pre-request JS */  %}
+GET {{baseUrl}}/users
+...body...
+
+> {%  /* post-response JS (tests) */  %}
+```
+Also `> ./tests/users.js` to reference a file. Store as `Request.PreScript` / `PostScript`
+with source location for error messages.
+
+**1.4 Body from file** — `< ./payload.json` as body line (path relative to `.mon` file).
+
+✅ Phase done when: Readme documents the full v2 grammar; fixtures for every construct.
+
+---
+
+## Phase 2 — Configuration & variables (`monica.yml`)
+
+Uses `gopkg.in/yaml.v3` (already an indirect dep → promote to direct).
+
+| ID | Task | Size |
+|----|------|------|
+| 2.1 | `internal/config`: load & validate `monica.yml` | M |
+| 2.2 | Environments + `${OS_ENV}` + `.env` + local override | M |
+| 2.3 | `{{var}}` template substitution | M |
+| 2.4 | CLI flags `--env`, `--var`, `--config` | S |
+| 2.5 | Secret masking | S |
+
+**2.1 Config loader**
+```yaml
+version: 1
+defaults: { timeout: 30s, followRedirects: true, insecureSkipVerify: false,
+            headers: {User-Agent: monica/0.2.0}, vars: {apiVersion: v2} }
+envs:
+  dev:  { vars: { baseUrl: http://localhost:8080, pass: ${DEV_PASSWORD} } }
+  prod: { timeout: 10s, vars: { baseUrl: https://api.example.com } }
+scripts: { paths: [./lib] }
+load:    { vus: 50, duration: 30s, thresholds: ["p95<300ms", "errors<1%"] }
+```
+- Discovery: walk up from the `.mon` file's dir to find `monica.yml`; `--config` overrides.
+- Strict decoding (unknown keys = error), validate durations, `version`.
+
+**2.2 Environments** — selected env merges over `defaults`. `${NAME}` resolved from OS env,
+then `.env` file (stdlib parser, no dep). `monica.local.yml` deep-merges on top (gitignored).
+`MONICA_ENV` = default for `--env`.
+
+**2.3 Templating** — `{{name}}` in URL, headers, body. Resolution order (high → low):
+`--var` → runtime `vars.set()` (Phase 3) → env vars → `defaults.vars`.
+Unknown variable = error with `file:line`. Built-ins: `{{$uuid}}`, `{{$timestamp}}`, `{{$randomInt}}`.
+
+**2.4 CLI** — `monica run --env dev --var token=abc --config ./monica.yml`.
+
+**2.5 Secret masking** — values originating from `${…}` are replaced by `****` in logs and printed output.
+
+---
+
+## Phase 3 — Script engine (goja) 🔒 `github.com/dop251/goja`
+
+| ID | Task | Size |
+|----|------|------|
+| 3.1 | `pkg/script`: engine wrapper & sandbox | L |
+| 3.2 | `req` / `res` / `vars` API | M |
+| 3.3 | Pre-request scripts | S |
+| 3.4 | Script errors & timeouts | S |
+
+**3.1 Engine** — `Engine` owns one `*goja.Runtime` (not goroutine-safe → one per VU later).
+Compile each script once (`goja.Compile`) and cache the `*goja.Program`.
+Only exposed globals: `console`, `req`, `res`, `vars`, `test`, `expect`. No fs/net/process.
+
+**3.2 API**
+- `res.status`, `res.headers.get(name)`, `res.body` (string), `res.json()`, `res.time` (ms).
+- `req.method/url/headers/body` (mutable in pre-request scripts).
+- `vars.get/set/has`, `monica.env` (current env name).
+
+**3.3 Pre-request** — `< {% %}` runs before templating, can set vars and mutate `req`.
+
+**3.4 Errors** — JS exceptions map to `file:line` in the `.mon` file; per-script timeout
+via `runtime.Interrupt`.
+
+---
+
+## Phase 4 — Tests & reporting
+
+| ID | Task | Size |
+|----|------|------|
+| 4.1 | `test()` + `expect()` assertion API | M |
+| 4.2 | Console reporter | M |
+| 4.3 | Machine reporters: JSON, JUnit XML | M |
+| 4.4 | Run controls: `--bail`, `--filter`, `--quiet` | S |
+
+**4.1 Assertions** (implemented in Go, exposed to JS — no chai dependency)
+```js
+test("returns user", () => {
+  expect(res.status).toBe(200);
+  expect(res.json().name).toEqual("ada");
+  expect(res.time).toBeLessThan(500);
+});
+```
+Matchers: `toBe, toEqual (deep), toContain, toMatch, toBeLessThan/GreaterThan, toHaveProperty, toBeTruthy`, `.not`.
+
+**4.2 Console reporter** — per request: name, status, duration, ✓/✗ per test, failure diff; summary line; exit code 1 on failure.
+
+**4.3 Reporters** — `--reporter json|junit --out report.xml` for CI.
+
+**4.4 Run controls** — stop at first failure, run by request name/glob, hide bodies.
+
+---
+
+## Phase 5 — Modules & code reuse 🔒 `github.com/dop251/goja_nodejs`
+
+| ID | Task | Size |
+|----|------|------|
+| 5.1 | `require()` for local files (sandboxed) | M |
+| 5.2 | `node_modules` CommonJS packages | S |
+| 5.3 | Built-in `monica/*` modules (Go) | M |
+| 5.4 | Folder-level hooks `monica.js` | M |
+| 5.5 | *(optional)* ESM/TypeScript via esbuild 🔒 | L |
+
+**5.1** Custom `SourceLoader` restricted to project root + `scripts.paths`; path traversal rejected.
+Compiled modules cached and shared across runtimes.
+
+**5.2** Node-style resolution (`node_modules`, `package.json#main`). Document: pure-JS CJS only
+(lodash, dayjs, ajv, uuid, crypto-js work; axios/fs-based packages don't).
+
+**5.3** `monica/crypto` (hmac, sha256, md5), `monica/encoding` (base64, url, hex),
+`monica/random` (uuid, int, string), `monica/jsonpath`.
+
+**5.4** `monica.js` in a folder exports `beforeAll/beforeEach/afterEach/afterAll`.
+
+**5.5** Only if needed: embed `github.com/evanw/esbuild/pkg/api` to transpile ESM/TS on load.
+
+---
+
+## Phase 6 — Collections & chaining
+
+| ID | Task | Size |
+|----|------|------|
+| 6.1 | Deterministic run order | S |
+| 6.2 | Shared variable scope across a run | S |
+| 6.3 | Data-driven runs (CSV/JSON) | M |
+| 6.4 | Retries & conditional skip | S |
+
+**6.1** Files sorted by path; requests in file order; optional `order:` list in `monica.yml`.
+**6.2** `vars.set` in one request is visible to the following ones (login → token → use).
+**6.3** `monica run --data users.csv` iterates rows as vars.
+**6.4** `# @retry 3 1s`; `req.skip()` from pre-request script.
+
+---
+
+## Phase 7 — Load testing (`monica load`)
+
+| ID | Task | Size |
+|----|------|------|
+| 7.1 | VU executor (fixed VUs × duration/iterations) | L |
+| 7.2 | Metrics collection & percentiles | M |
+| 7.3 | Thresholds & exit code | S |
+| 7.4 | Arrival-rate executor + ramping stages | M |
+| 7.5 | Live progress + summary/JSON output | M |
+| 7.6 | Connection & resource tuning | S |
+
+**7.1 Executor** — each VU = goroutine + own goja runtime + own vars; loops over the
+collection. Graceful stop on duration / Ctrl-C (context cancel).
+
+**7.2 Metrics** — per request name: count, errors, min/avg/p50/p90/p95/p99/max, RPS,
+bytes; `httptrace` timings (DNS, connect, TLS, TTFB). Stdlib-only histogram
+(HDR-style buckets) — no dependency.
+
+**7.3 Thresholds** — from `load.thresholds` or `--threshold "p95<300ms"`; failing → exit 1.
+
+**7.4 Executors** — `--rate 100/s` (constant arrival) and `stages:` ramp-up/down in `monica.yml`.
+
+**7.5 Output** — live line (VUs, RPS, p95, errors) on TTY; final table; `--out json`.
+
+**7.6 Tuning** — shared `Transport` with `MaxIdleConnsPerHost`, keep-alive toggle,
+`--insecure`, per-VU cookie jar.
+
+---
+
+## Phase 8 — Polish & distribution
+
+- 8.1 `monica init` — scaffold `monica.yml`, example `.mon`, `.gitignore` entries.
+- 8.2 `monica import curl '<cmd>'` → `.mon`; later Postman/Bruno collection import.
+- 8.3 Cookies (`cookie jar` per run), multipart/form-data, file upload.
+- 8.4 Docs site / full format reference; examples folder.
+- 8.5 Release: goreleaser + Docker image updated with new commands.
+
+---
+
+## Dependency summary
+
+| Dependency | Phase | Status |
+|------------|-------|--------|
+| `gopkg.in/yaml.v3` | 2 | already indirect → promote |
+| `github.com/dop251/goja` | 3 | 🔒 needs approval |
+| `github.com/dop251/goja_nodejs` | 5 | 🔒 needs approval |
+| `github.com/evanw/esbuild` | 5.5 | 🔒 optional |
+
+## Suggested order
+
+`0.1 → 0.2 → 0.3 → 0.4 → 1.1 → 1.2 → 2.1 → 2.2 → 2.3 → 2.4 → 2.5 → 1.3 → 3.x → 4.x → 5.x → 6.x → 7.x → 8.x`
+
+(1.3 is parked until right before Phase 3 so the script syntax is designed with the engine in hand.)
