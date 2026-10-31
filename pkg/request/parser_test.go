@@ -515,6 +515,11 @@ func TestParseRequest(t *testing.T) {
 		{name: "repeated directive", raw: "# @timeout 1s\n# @timeout 2s\nGET http://a.example/\n", wantErr: "line 2: duplicate @timeout (first at line 1)"},
 		{name: "directives without a request", raw: "# @name orphan\n###\nGET http://a.example/\n", wantErr: "line 1: directives without a request"},
 		{name: "directives at EOF", raw: "GET http://a.example/\n###\n# @skip\n", wantErr: "line 3: directives without a request"},
+		{
+			name: "templated URL with spaces inside braces",
+			raw:  "GET {{ baseUrl }}/users/{{id}} HTTP/1.1\n",
+			want: one(request.Request{Method: "GET", URL: "{{ baseUrl }}/users/{{id}}", Proto: "HTTP/1.1", Headers: http.Header{}}),
+		},
 		{name: "empty input", raw: "", wantErr: "missing request line"},
 		{name: "only separators", raw: "###\n### title\n", wantErr: "missing request line"},
 		{name: "request line without URL", raw: "# comment\nGET\n", wantErr: "line 2: invalid request line"},

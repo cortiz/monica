@@ -197,7 +197,7 @@ func TestClientTimeout(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := net.NewClient(tt.clientTimeout)
+			c := net.NewClient(net.Options{Timeout: tt.clientTimeout})
 			res, err := c.Do(&request.Request{Method: "GET", URL: srv.URL, Timeout: tt.reqTimeout}, false)
 			if !tt.wantErr {
 				if err != nil {
@@ -221,5 +221,55 @@ func TestClientTimeout(t *testing.T) {
 func TestNilRequest(t *testing.T) {
 	if _, err := net.HTTPRequest(nil, false); err == nil {
 		t.Fatal("expected error for nil request")
+	}
+}
+
+func TestClientRedirects(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/start" {
+			http.Redirect(w, r, "/final", http.StatusFound)
+			return
+		}
+		_, _ = w.Write([]byte("final"))
+	}))
+	defer srv.Close()
+
+	tests := []struct {
+		name       string
+		opts       net.Options
+		wantStatus int
+	}{
+		{"follows by default", net.Options{}, http.StatusOK},
+		{"returns the 3xx when disabled", net.Options{NoFollowRedirects: true}, http.StatusFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := net.NewClient(tt.opts).Do(&request.Request{Method: "GET", URL: srv.URL + "/start"}, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.StatusCode != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", res.StatusCode, tt.wantStatus)
+			}
+		})
+	}
+}
+
+func TestClientInsecureSkipVerify(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("tls"))
+	}))
+	defer srv.Close()
+	req := &request.Request{Method: "GET", URL: srv.URL}
+
+	if _, err := net.NewClient(net.Options{}).Do(req, false); err == nil {
+		t.Fatal("self-signed certificate must be rejected by default")
+	}
+	res, err := net.NewClient(net.Options{InsecureSkipVerify: true}).Do(req, false)
+	if err != nil {
+		t.Fatalf("insecure client: %v", err)
+	}
+	if res.Body != "tls" {
+		t.Fatalf("body = %q", res.Body)
 	}
 }

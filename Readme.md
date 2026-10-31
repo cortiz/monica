@@ -24,9 +24,53 @@ Responses are printed to stdout; logs and errors go to stderr.
 |------|---------|
 | `0`  | All requests succeeded |
 | `1`  | At least one request failed (e.g. connection error) |
-| `2`  | Usage or input error (unknown flag, missing file, invalid `.mon` syntax) |
+| `2`  | Usage or input error (unknown flag, missing file, invalid `.mon` syntax or config, unknown variable or environment) |
 
 Parse errors are reported as `file:line: message`.
+
+## Configuration
+
+`monica.yml` holds settings and variables shared by `.mon` files. For each `.mon` file Monica
+uses the nearest `monica.yml` in its directory or any parent directory. Without one, the
+built-in defaults apply (30s timeout, redirects followed, TLS verified).
+
+```yaml
+version: 1                  # required
+defaults:                   # apply to every environment
+  timeout: 30s              # Go duration: 500ms, 5s, 1m
+  followRedirects: true
+  insecureSkipVerify: false # true accepts self-signed certificates
+  headers:                  # added when a request doesn't set them
+    User-Agent: monica/0.2.0
+  vars:
+    apiVersion: v2
+envs:                       # each env merges over defaults
+  dev:
+    vars:
+      baseUrl: http://localhost:8080
+      pass: ${DEV_PASSWORD}
+  prod:
+    timeout: 10s
+    vars:
+      baseUrl: https://api.example.com
+scripts:
+  paths: [./lib]            # reserved for script modules (not used yet)
+load:                       # reserved for load testing (not used yet)
+  vus: 50
+  duration: 30s
+  thresholds: ["p95<300ms", "errors<1%"]
+```
+
+* Unknown keys, a missing or unsupported `version` and invalid durations are errors that name
+  the file (and line when known).
+* **Environments** — the selected environment's settings merge over `defaults`; `headers` and
+  `vars` merge key by key.
+* **`${NAME}`** in header and variable values is read from the OS environment, then from a
+  `.env` file next to `monica.yml` (`KEY=VALUE` lines, `#` comments, optional `export` and
+  quotes). An unset name is an error. Use quotes in flow-style YAML (`{ pass: "${X}" }`).
+* **`monica.local.yml`** next to `monica.yml` deep-merges on top of it (`version` optional).
+  Keep it and `.env` out of version control for personal or secret values.
+* Default header values may use `{{name}}`; variable values are used literally.
 
 ## Mon file format
 ```
@@ -92,6 +136,13 @@ a failing request does not stop the ones after it.
     A missing file is an input error. In a body, `>` lines that are not `> {%` or a `.js`
     path stay body text.
   * At most one pre-request and one post-response script per request (inline or file).
+* **Variables** — `{{name}}` in the URL, header values and body is replaced by a variable's
+  value (spaces inside the braces are allowed: `{{ name }}`). Values come from, highest first:
+  `--var name=value`, the selected environment's `vars`, then `defaults.vars` (see
+  [Configuration](#configuration)). An unknown variable is an input error (`file:line`).
+  Built-ins: `{{$uuid}}` (random v4 UUID), `{{$timestamp}}` (Unix seconds),
+  `{{$randomInt}}` (0–999). Values are not expanded again, there is no escape for a literal
+  `{{`, and a body loaded with `< path` is sent as is.
 * Both `\n` and `\r\n` line endings are accepted.
 
 #### Example
@@ -157,4 +208,10 @@ Content-Type: application/json
 GET http://example.com/users
 
 > ./tests/users.js
+```
+
+```
+### Templated request (with monica.yml above)
+GET {{baseUrl}}/{{apiVersion}}/users/{{ id }}
+X-Request-Id: {{$uuid}}
 ```
