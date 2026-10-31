@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
+	"github.com/dop251/goja_nodejs/require"
 	"jmpeax.com/sec/monica/internal/logging"
 	"jmpeax.com/sec/monica/pkg/request"
 )
@@ -19,19 +20,24 @@ type ConsoleFunc func(level, msg string)
 type Options struct {
 	// Console receives console.* output; nil logs it.
 	Console ConsoleFunc
+	// Modules backs require(); nil leaves require undefined.
+	Modules *Modules
 }
 
 // Engine runs scripts in one goja runtime. A runtime is not safe for
 // concurrent use: use one Engine per goroutine.
 //
 // The sandbox is plain ECMAScript plus the globals the engine installs
-// (console, and per run req, res, vars, monica, test, expect); there is no
-// require, file system, network or process access.
+// (console, require when Options.Modules is set, and per run req, res, vars,
+// monica, test, expect); there is no file system, network or process
+// access beyond what require may load.
 type Engine struct {
 	rt       *goja.Runtime
 	programs map[*request.Script]*goja.Program
 	console  ConsoleFunc
 	results  []TestResult // test() outcomes of the current run
+	modules  *Modules
+	require  *require.RequireModule // nil without Modules
 }
 
 // maxCallStack bounds JS recursion so runaway scripts fail fast with a
@@ -47,6 +53,9 @@ func New(opts Options) *Engine {
 		e.console = logConsole
 	}
 	e.installConsole()
+	if opts.Modules != nil {
+		e.installRequire(opts.Modules)
+	}
 	return e
 }
 

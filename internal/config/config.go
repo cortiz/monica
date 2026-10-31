@@ -42,12 +42,13 @@ type Settings struct {
 	Vars               map[string]string `yaml:"vars"`
 }
 
-// Scripts configures script execution. Paths (module lookup) is used from
-// phase 5.
+// Scripts configures script execution.
 type Scripts struct {
 	// Timeout bounds each script run; zero means the engine default (5s).
 	Timeout Duration `yaml:"timeout"`
-	Paths   []string `yaml:"paths"`
+	// Paths are folders (relative to the config file) searched by
+	// require("name") and allowed besides the project root.
+	Paths []string `yaml:"paths"`
 }
 
 // LoadSettings configures `monica load` (used from phase 7).

@@ -89,8 +89,9 @@ Parse errors are reported as `file:line: message`.
 ## Scripting
 
 Scripts are JavaScript (ES5.1 plus most of ES2015+, via [goja](https://github.com/dop251/goja))
-in a sandbox: no `require`, file system, network, timers or `process`. Each script runs in its
-own function scope; share data between requests with `vars`.
+in a sandbox: no file system, network, timers or `process`; `require()` loads only the
+project's own modules (see [Modules](#modules)). Each script runs in its own function scope;
+share data between requests with `vars`.
 
 **Order per request:** pre-request script → `{{variable}}` expansion and default headers →
 send → print response → post-response script.
@@ -107,6 +108,7 @@ send → print response → post-response script.
 | `monica.env` (selected environment or `""`) | ✓ | ✓ |
 | `console.log/info/warn/error` (to the log, secrets masked) | ✓ | ✓ |
 | `test(name, fn)`, `expect(value)` | ✓ | ✓ |
+| `require(path)` ([Modules](#modules)) | ✓ | ✓ |
 
 `vars.set` stores the value as a string; it is visible to every later request of the run,
 including those in later files, but `--var` still wins.
@@ -159,6 +161,33 @@ GET {{baseUrl}}/me
 Authorization: Bearer {{token}}
 ```
 
+### Modules
+
+`require()` loads CommonJS modules (`module.exports` / `exports`), so helpers can be shared
+between scripts:
+
+```js
+// lib/auth.js
+exports.bearer = (token) => "Bearer " + token;
+```
+```
+< {% req.headers.set("Authorization", require("auth").bearer(vars.get("token"))) %}
+GET {{baseUrl}}/me
+```
+
+* **Files** — `./x` and `../x` are relative to the requiring file (the `.mon` file for
+  `{% %}` blocks, the `.js` file for script files and modules). `x`, `x.js`, `x.json` and
+  `x/index.js` are tried in that order; `.json` files are parsed.
+* **Bare names** (`require("auth")`) are looked up in the `scripts.paths` folders of
+  `monica.yml` (relative to it), then in `node_modules` folders.
+* **Sandbox** — only files under the project root (the folder of `monica.yml`, or of the
+  `.mon` file when there is none) or a `scripts.paths` folder can be loaded; anything else,
+  including `../` traversal, absolute paths and symlinks pointing out, fails with an error.
+* A module runs once per run: every `require()` of it returns the same `exports`, so module
+  state carries over between requests. Module code counts against `scripts.timeout`, and its
+  errors are reported at the `require()` call (with the module's own `file:line` for syntax
+  errors).
+
 ## Configuration
 
 `monica.yml` holds settings and variables shared by `.mon` files. For each `.mon` file Monica
@@ -186,7 +215,7 @@ envs:                       # each env merges over defaults
       baseUrl: https://api.example.com
 scripts:
   timeout: 5s               # per script run (default 5s)
-  paths: [./lib]            # reserved for script modules (not used yet)
+  paths: [./lib]            # folders for require("name"), relative to monica.yml
 load:                       # reserved for load testing (not used yet)
   vus: 50
   duration: 30s
