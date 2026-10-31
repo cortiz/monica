@@ -179,7 +179,13 @@ GET {{baseUrl}}/me
   `{% %}` blocks, the `.js` file for script files and modules). `x`, `x.js`, `x.json` and
   `x/index.js` are tried in that order; `.json` files are parsed.
 * **Bare names** (`require("auth")`) are looked up in the `scripts.paths` folders of
-  `monica.yml` (relative to it), then in `node_modules` folders.
+  `monica.yml` (relative to it), then in `node_modules` folders from the requiring file's
+  folder up to the project root, Node-style: `package.json` `main`, `index.js`, subpaths
+  (`require("pkg/lib/x")`) and scoped packages (`@scope/pkg`).
+* **npm packages** — install with `npm install` next to `monica.yml`. Only pure-JavaScript
+  CommonJS (or UMD) packages work: e.g. `lodash`, `dayjs`, `ajv`, `crypto-js`. Packages that
+  need Node.js core modules (`fs`, `http`, `crypto`, …) such as `axios` or `uuid` fail with
+  `Node.js core modules are not available`; ES modules (`import`/`export`) are not supported.
 * **Sandbox** — only files under the project root (the folder of `monica.yml`, or of the
   `.mon` file when there is none) or a `scripts.paths` folder can be loaded; anything else,
   including `../` traversal, absolute paths and symlinks pointing out, fails with an error.
