@@ -30,7 +30,26 @@ Monica is designed to handle Network requests and responses.
 | `--var name=value` | Set a variable; repeatable, overrides `monica.yml` |
 | `-c, --config <file>` | Use this config instead of the nearest `monica.yml` |
 
-Responses are printed to stdout; logs and errors go to stderr.
+The report goes to stdout; logs and errors go to stderr. For each request it prints a status
+line, the response, and ✓/✗ per test (with the failure message), then a summary:
+
+```
+✓ login  POST https://api.example.com/login → 200 OK  42ms  (api.mon:3)
+
+HTTP/1.1 200 OK
+Content-Type: application/json
+{"token":"****"}
+
+    ✓ returns a token
+✗ users  GET https://api.example.com/users → 200 OK  18ms  (api.mon:12)
+    ✗ has ada
+        expected values to be deeply equal
+          expected: "ada"
+          received: "bob"
+- slow  skipped: flaky upstream  (api.mon:20)
+
+3 requests: 1 passed, 1 failed, 1 skipped · 2 tests: 1 passed, 1 failed · 61ms
+```
 
 ### Exit codes
 | Code | Meaning |
