@@ -1,0 +1,11 @@
+# Personal overrides; not committed in real projects.
+defaults:
+  vars:
+    region: local-eu
+envs:
+  dev:
+    vars:
+      baseUrl: http://127.0.0.1:9000
+  mine:
+    vars:
+      baseUrl: http://mine.local

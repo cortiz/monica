@@ -1,0 +1,22 @@
+version: 1
+defaults:
+  timeout: 20s
+  headers:
+    User-Agent: monica-test
+    X-Team: core
+  vars:
+    apiVersion: v2
+    region: eu
+envs:
+  dev:
+    followRedirects: false
+    headers:
+      Authorization: Bearer ${DEV_TOKEN}
+    vars:
+      baseUrl: http://localhost:8080
+      pass: ${DEV_PASSWORD}
+  prod:
+    timeout: 10s
+    vars:
+      baseUrl: https://api.example.com
+      region: us
