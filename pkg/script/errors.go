@@ -74,6 +74,14 @@ func toError(s *request.Script, err error) error {
 		}
 		return e
 	}
+	var so *goja.StackOverflowError
+	if errors.As(err, &so) {
+		e := &Error{Kind: KindException, File: name, Line: s.Line, Msg: "RangeError: Maximum call stack size exceeded"}
+		if st := so.Stack(); len(st) > 0 && st[0].Position().Filename == name {
+			e.Line, e.Column = st[0].Position().Line, st[0].Position().Column
+		}
+		return e
+	}
 	var intr *goja.InterruptedError
 	if errors.As(err, &intr) {
 		e := &Error{Kind: KindTimeout, File: name, Line: s.Line, Msg: "script interrupted"}

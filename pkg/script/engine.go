@@ -33,9 +33,15 @@ type Engine struct {
 	console  ConsoleFunc
 }
 
+// maxCallStack bounds JS recursion so runaway scripts fail fast with a
+// RangeError instead of growing until the timeout.
+const maxCallStack = 10000
+
 // New returns an Engine with console installed.
 func New(opts Options) *Engine {
-	e := &Engine{rt: goja.New(), programs: map[*request.Script]*goja.Program{}, console: opts.Console}
+	rt := goja.New()
+	rt.SetMaxCallStackSize(maxCallStack)
+	e := &Engine{rt: rt, programs: map[*request.Script]*goja.Program{}, console: opts.Console}
 	if e.console == nil {
 		e.console = logConsole
 	}
