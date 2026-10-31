@@ -10,6 +10,7 @@ import (
 	"jmpeax.com/sec/monica/internal/logging"
 	"jmpeax.com/sec/monica/pkg/net"
 	"jmpeax.com/sec/monica/pkg/request"
+	"jmpeax.com/sec/monica/pkg/script"
 	"jmpeax.com/sec/monica/pkg/template"
 )
 
@@ -24,11 +25,15 @@ func (e *InputError) Error() string { return e.Err.Error() }
 func (e *InputError) Unwrap() error { return e.Err }
 
 // Runner runs .mon files. It loads each monica.yml once and reuses its
-// HTTP client across files.
+// HTTP client across files. Variables set by scripts (vars.set) are visible
+// to every later request of the run.
 type Runner struct {
 	opts     *Opts
 	out      io.Writer
 	projects map[string]*project // by config path; "" = no config
+	runtime  map[string]string   // vars.set values
+	engine   *script.Engine      // created on first script
+	mask     masker              // of the request being run, for console output
 }
 
 // project is a resolved config and what is built from it.
@@ -40,7 +45,7 @@ type project struct {
 
 // New returns a Runner writing responses to out.
 func New(opts *Opts, out io.Writer) *Runner {
-	return &Runner{opts: opts, out: out, projects: map[string]*project{}}
+	return &Runner{opts: opts, out: out, projects: map[string]*project{}, runtime: map[string]string{}}
 }
 
 // RunSingleFile runs one file with a fresh Runner.
@@ -74,10 +79,17 @@ func (r *Runner) RunFile(file string) error {
 			continue
 		}
 		logging.Log.Info().Msgf("%s: %s", where, req.Label())
-		if req.PreScript != nil || req.PostScript != nil {
-			logging.Log.Warn().Msgf("%s: scripts are parsed but not run yet", where)
+		r.mask = p.mask
+		ctx := script.Context{Env: p.settings.Env, Vars: &runVars{r: r, s: p.settings}}
+		working := *req
+		working.Headers = req.Headers.Clone()
+		if req.PreScript != nil {
+			if err := r.scripts().RunPre(req.PreScript, &working, ctx); err != nil {
+				errs = append(errs, p.mask.Error(fmt.Errorf("%s: %s: pre-request script: %w", where, req.Label(), err)))
+				continue
+			}
 		}
-		rendered, err := r.render(req, p.settings)
+		rendered, err := r.render(&working, p.settings)
 		if err != nil {
 			errs = append(errs, &InputError{Err: p.mask.Error(err)})
 			continue
@@ -91,20 +103,59 @@ func (r *Runner) RunFile(file string) error {
 		if _, err := fmt.Fprintln(r.out, p.mask.String(res.String())); err != nil {
 			return err
 		}
+		if req.PostScript != nil {
+			if err := r.scripts().RunPost(req.PostScript, rendered, res, ctx); err != nil {
+				errs = append(errs, p.mask.Error(fmt.Errorf("%s: %s: post-response script: %w", where, req.Label(), err)))
+			}
+		}
 	}
 	return errors.Join(errs...)
 }
 
-// render expands {{variables}} (--var over config vars) and adds the
-// config's default headers the request doesn't set itself.
-func (r *Runner) render(req *request.Request, s *config.Resolved) (*request.Request, error) {
-	lookup := func(name string) (string, bool) {
-		if v, ok := r.opts.Vars[name]; ok {
-			return v, true
-		}
-		v, ok := s.Vars[name]
-		return v, ok
+// scripts returns the run's script engine, creating it on first use.
+// Console output is masked like everything else.
+func (r *Runner) scripts() *script.Engine {
+	if r.engine == nil {
+		r.engine = script.New(script.Options{Console: func(level, msg string) {
+			msg = "console." + level + ": " + r.mask.String(msg)
+			switch level {
+			case "warn":
+				logging.Log.Warn().Msg(msg)
+			case "error":
+				logging.Log.Error().Msg(msg)
+			default:
+				logging.Log.Info().Msg(msg)
+			}
+		}})
 	}
+	return r.engine
+}
+
+// lookup resolves a variable: --var, then vars.set values, then config vars.
+func (r *Runner) lookup(s *config.Resolved, name string) (string, bool) {
+	if v, ok := r.opts.Vars[name]; ok {
+		return v, true
+	}
+	if v, ok := r.runtime[name]; ok {
+		return v, true
+	}
+	v, ok := s.Vars[name]
+	return v, ok
+}
+
+// runVars is the script view of the run's variables.
+type runVars struct {
+	r *Runner
+	s *config.Resolved
+}
+
+func (v *runVars) Get(name string) (string, bool) { return v.r.lookup(v.s, name) }
+func (v *runVars) Set(name, value string)         { v.r.runtime[name] = value }
+
+// render expands {{variables}} (see lookup) and adds the config's default
+// headers the request doesn't set itself.
+func (r *Runner) render(req *request.Request, s *config.Resolved) (*request.Request, error) {
+	lookup := func(name string) (string, bool) { return r.lookup(s, name) }
 	expand := func(text string) (string, error) { return template.Expand(text, lookup) }
 	out, err := req.Render(expand)
 	if err != nil {
