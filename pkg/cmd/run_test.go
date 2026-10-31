@@ -27,7 +27,8 @@ func runCLI(t *testing.T, args ...string) (code int, stdout, stderr string) {
 	singleFile, recursiveLevel = "", 1
 	envName, varFlags, configPath = "", nil, ""
 	reporterName, outPath = "console", ""
-	for _, name := range []string{"env", "var", "config", "single", "recursive", "reporter", "out"} {
+	bail, filters, quiet = false, nil, false
+	for _, name := range []string{"env", "var", "config", "single", "recursive", "reporter", "out", "bail", "filter", "quiet"} {
 		if f := run.Flags().Lookup(name); f != nil {
 			f.Changed = false
 		}
@@ -251,4 +252,51 @@ func TestRunReporters(t *testing.T) {
 			t.Fatalf("exit=%d stderr=%s", code, stderr)
 		}
 	})
+}
+
+func TestRunControlFlags(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("body-of-" + r.URL.Path))
+	}))
+	defer srv.Close()
+	closed := httptest.NewServer(http.NotFoundHandler())
+	closedURL := closed.URL
+	closed.Close()
+
+	dir := t.TempDir()
+	writeMon(t, dir, "a.mon", "# @name first\nGET "+srv.URL+"/a\n###\n# @name broken\nGET "+closedURL+"/x\n")
+	writeMon(t, dir, "b.mon", "# @name second\nGET "+srv.URL+"/b\n")
+	chdir(t, dir)
+
+	tests := []struct {
+		name     string
+		args     []string
+		wantCode int
+		want     []string
+		notWant  []string
+	}{
+		{"all", []string{"run"}, ExitFailed, []string{"✓ first", "✗ broken", "✓ second", "body-of-/b"}, nil},
+		{"--bail", []string{"run", "--bail"}, ExitFailed, []string{"✓ first", "✗ broken", "2 requests"}, []string{"second"}},
+		{"--filter", []string{"run", "--filter", "sec*"}, ExitOK, []string{"✓ second", "1 request: 1 passed"}, []string{"first", "broken"}},
+		{"-q", []string{"run", "-q", "--filter", "first"}, ExitOK, []string{"✓ first"}, []string{"body-of-"}},
+		{"--filter is literal apart from * and ?", []string{"run", "--filter", "[first]"}, ExitOK, []string{"0 requests"}, []string{"✓ first"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code, stdout, stderr := runCLI(t, tt.args...)
+			if code != tt.wantCode {
+				t.Fatalf("exit = %d, want %d (stderr %s)", code, tt.wantCode, stderr)
+			}
+			for _, s := range tt.want {
+				if !strings.Contains(stdout, s) {
+					t.Errorf("stdout missing %q:\n%s", s, stdout)
+				}
+			}
+			for _, s := range tt.notWant {
+				if strings.Contains(stdout, s) {
+					t.Errorf("stdout must not contain %q:\n%s", s, stdout)
+				}
+			}
+		})
+	}
 }

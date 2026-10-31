@@ -24,6 +24,9 @@ var (
 	configPath     string
 	reporterName   string
 	outPath        string
+	bail           bool
+	filters        []string
+	quiet          bool
 	run            = &cobra.Command{
 		Use:   "run",
 		Short: "Runs all mon files",
@@ -39,7 +42,7 @@ var (
 			if !cmd.Flags().Changed("env") {
 				env = os.Getenv(config.EnvVar)
 			}
-			opts := &runner.Opts{Env: env, Vars: vars, ConfigPath: configPath}
+			opts := &runner.Opts{Env: env, Vars: vars, ConfigPath: configPath, Bail: bail, Filters: filters, Quiet: quiet}
 			rep, closeOut, err := newReporter(reporterName, outPath, opts, cmd.OutOrStdout())
 			if err != nil {
 				return &exitError{code: ExitUsage, err: err}
@@ -67,6 +70,9 @@ func init() {
 	run.Flags().StringVarP(&configPath, "config", "c", "", "config file to use instead of the nearest monica.yml")
 	run.Flags().StringVar(&reporterName, "reporter", "console", "report format: console, json or junit")
 	run.Flags().StringVarP(&outPath, "out", "o", "", "write the report to this file (json/junit keep the console report on stdout)")
+	run.Flags().BoolVar(&bail, "bail", false, "stop at the first failed request")
+	run.Flags().StringArrayVar(&filters, "filter", nil, "only run requests whose @name, ### title or \"METHOD URL\" matches this glob (repeatable)")
+	run.Flags().BoolVarP(&quiet, "quiet", "q", false, "hide response headers and bodies")
 }
 
 // newReporter builds the reporter for --reporter/--out. With json or junit
@@ -137,6 +143,9 @@ func runAllFiles(r *runner.Runner, level int) error {
 	logging.Log.Info().Msgf("Found %d mon files", len(files))
 	worst, failed := ExitOK, 0
 	for _, file := range files {
+		if r.Bailed() {
+			break
+		}
 		if err := r.RunFile(file); err != nil {
 			failed++
 			logging.Log.Error().Msg(err.Error())
