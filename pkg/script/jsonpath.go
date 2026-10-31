@@ -213,25 +213,46 @@ func unquote(s string) (string, error) {
 	return b.String(), nil
 }
 
+// maxJSONPathNodes bounds the values a query visits: the walk is native
+// code, out of reach of the script timeout and the JS stack limit.
+const maxJSONPathNodes = 1_000_000
+
+// jpWalk evaluates one query, counting visited values against the budget.
+type jpWalk struct{ visited int }
+
+func (w *jpWalk) spend(n int) error {
+	w.visited += n
+	if w.visited > maxJSONPathNodes {
+		return fmt.Errorf("query visits more than %d values", maxJSONPathNodes)
+	}
+	return nil
+}
+
 // jsonPath evaluates path against doc and returns the matches in document
-// order. Matches are the values themselves, not copies.
-func jsonPath(rt *goja.Runtime, doc goja.Value, path string) ([]goja.Value, error) {
+// order. Matches are the values themselves, not copies. Recursive descent
+// does not follow cycles.
+func jsonPath(_ *goja.Runtime, doc goja.Value, path string) ([]goja.Value, error) {
 	steps, err := parseJSONPath(path)
 	if err != nil {
 		return nil, err
 	}
+	w := &jpWalk{}
 	nodes := []goja.Value{doc}
 	for _, st := range steps {
 		if st.deep {
 			var all []goja.Value
 			for _, n := range nodes {
-				all = descendants(rt, n, all)
+				if all, err = w.descendants(n, all, map[*goja.Object]bool{}); err != nil {
+					return nil, err
+				}
 			}
 			nodes = all
 		}
 		var next []goja.Value
 		for _, n := range nodes {
-			next = st.apply(rt, n, next)
+			if next, err = w.apply(&st, n, next); err != nil {
+				return nil, err
+			}
 		}
 		nodes = next
 	}
@@ -240,59 +261,82 @@ func jsonPath(rt *goja.Runtime, doc goja.Value, path string) ([]goja.Value, erro
 
 // children returns an object's own enumerable values or an array's
 // elements; nil for anything else.
-func children(rt *goja.Runtime, v goja.Value) []goja.Value {
+func (w *jpWalk) children(v goja.Value) ([]goja.Value, error) {
 	obj, ok := v.(*goja.Object)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	if _, isFunc := goja.AssertFunction(obj); isFunc {
-		return nil
+		return nil, nil
 	}
-	if elems, ok := arrayElems(obj); ok {
-		return elems
+	if elems, isArray, err := w.arrayElems(obj); isArray || err != nil {
+		return elems, err
 	}
-	var out []goja.Value
-	for _, k := range obj.Keys() {
-		out = append(out, obj.Get(k))
+	keys := obj.Keys()
+	if err := w.spend(len(keys)); err != nil {
+		return nil, err
 	}
-	return out
+	out := make([]goja.Value, len(keys))
+	for i, k := range keys {
+		out[i] = obj.Get(k)
+	}
+	return out, nil
 }
 
 // arrayElems returns the elements of a JS array.
-func arrayElems(obj *goja.Object) ([]goja.Value, bool) {
+func (w *jpWalk) arrayElems(obj *goja.Object) ([]goja.Value, bool, error) {
 	if obj.ClassName() != "Array" {
-		return nil, false
+		return nil, false, nil
 	}
-	n := int(obj.Get("length").ToInteger())
+	n := obj.Get("length").ToInteger()
+	if err := w.spend(int(min(n, maxJSONPathNodes+1))); err != nil {
+		return nil, true, err
+	}
 	out := make([]goja.Value, n)
 	for i := range out {
 		out[i] = obj.Get(strconv.Itoa(i))
 	}
-	return out, true
+	return out, true, nil
 }
 
-// descendants appends v and everything below it, pre-order.
-func descendants(rt *goja.Runtime, v goja.Value, out []goja.Value) []goja.Value {
-	out = append(out, v)
-	for _, c := range children(rt, v) {
-		out = descendants(rt, c, out)
+// descendants appends v and everything below it, pre-order, skipping
+// objects already on the path from the root (cycles).
+func (w *jpWalk) descendants(v goja.Value, out []goja.Value, onPath map[*goja.Object]bool) ([]goja.Value, error) {
+	obj, isObj := v.(*goja.Object)
+	if isObj {
+		if onPath[obj] {
+			return out, nil
+		}
+		onPath[obj] = true
+		defer delete(onPath, obj)
 	}
-	return out
+	out = append(out, v)
+	kids, err := w.children(v)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range kids {
+		if out, err = w.descendants(c, out, onPath); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
-func (st *jpStep) apply(rt *goja.Runtime, v goja.Value, out []goja.Value) []goja.Value {
+func (w *jpWalk) apply(st *jpStep, v goja.Value, out []goja.Value) ([]goja.Value, error) {
 	if st.wildcard {
-		return append(out, children(rt, v)...)
+		kids, err := w.children(v)
+		return append(out, kids...), err
 	}
 	obj, ok := v.(*goja.Object)
 	if !ok {
-		return out
+		return out, nil
 	}
-	elems, isArray := arrayElems(obj)
+	isArray := obj.ClassName() == "Array"
 	switch {
 	case len(st.names) > 0:
 		if isArray {
-			return out
+			return out, nil
 		}
 		for _, name := range st.names {
 			if hasOwn(obj, name) {
@@ -301,27 +345,34 @@ func (st *jpStep) apply(rt *goja.Runtime, v goja.Value, out []goja.Value) []goja
 		}
 	case !isArray:
 	case st.slice != nil:
-		start, end := 0, len(elems)
+		n := int(min(obj.Get("length").ToInteger(), 1<<53))
+		start, end := 0, n
 		if st.slice.start != nil {
-			start = clampIndex(*st.slice.start, len(elems))
+			start = clampIndex(*st.slice.start, n)
 		}
 		if st.slice.end != nil {
-			end = clampIndex(*st.slice.end, len(elems))
+			end = clampIndex(*st.slice.end, n)
+		}
+		if end > start {
+			if err := w.spend(end - start); err != nil {
+				return nil, err
+			}
 		}
 		for i := start; i < end; i++ {
-			out = append(out, elems[i])
+			out = append(out, obj.Get(strconv.Itoa(i)))
 		}
 	default:
+		n := int(min(obj.Get("length").ToInteger(), 1<<53))
 		for _, i := range st.indexes {
 			if i < 0 {
-				i += len(elems)
+				i += n
 			}
-			if i >= 0 && i < len(elems) {
-				out = append(out, elems[i])
+			if i >= 0 && i < n {
+				out = append(out, obj.Get(strconv.Itoa(i)))
 			}
 		}
 	}
-	return out
+	return out, nil
 }
 
 // clampIndex maps a slice bound (negative = from the end) into [0, n].

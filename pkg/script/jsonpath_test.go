@@ -2,6 +2,7 @@ package script
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -124,6 +125,38 @@ func TestJSONPathInvalid(t *testing.T) {
 			_, err := parseJSONPath(tt.path)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("got %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestJSONPathLimits(t *testing.T) {
+	tests := []struct {
+		name, setup, path, want string // want: count of matches, or error text
+	}{
+		{"cycle in recursive descent", "const o = {a: {x: 1}}; o.self = o; o.a.up = o;", "$..x", "1"},
+		{"cycle under a wildcard", "const o = {k: [1]}; o.k.push(o);", "$..*", "3"},
+		{"shared objects are visited each time", "const s = {x: 1}; const o = {a: s, b: s};", "$..x", "2"},
+		{"huge sparse array", "const o = {a: new Array(4e9)};", "$..x", "visits more than 1000000 values"},
+		{"index into a huge array", "const o = {a: new Array(4e9)}; o.a[3] = 'v';", "$.a[3]", "1"},
+		{"slice of a huge array", "const o = {a: new Array(4e9)};", "$.a[:]", "visits more than 1000000 values"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rt := goja.New()
+			v, err := rt.RunString(tt.setup + " o")
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := jsonPath(rt, v, tt.path)
+			if err != nil {
+				if !strings.Contains(err.Error(), tt.want) {
+					t.Fatalf("got error %v, want %q", err, tt.want)
+				}
+				return
+			}
+			if n := strconv.Itoa(len(got)); n != tt.want {
+				t.Fatalf("got %s matches, want %s", n, tt.want)
 			}
 		})
 	}

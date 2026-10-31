@@ -188,8 +188,9 @@ GET {{baseUrl}}/me
   need Node.js core modules (`fs`, `http`, `crypto`, …) such as `axios` or `uuid` fail with
   `Node.js core modules are not available`; ES modules (`import`/`export`) are not supported.
 * **Sandbox** — only files under the project root (the folder of `monica.yml`, or of the
-  `.mon` file when there is none) or a `scripts.paths` folder can be loaded; anything else,
-  including `../` traversal, absolute paths and symlinks pointing out, fails with an error.
+  `.mon` file when there is none) can be loaded; anything else, including `../` traversal,
+  absolute paths and symlinks pointing out, fails with an error. `scripts.paths` folders must
+  be inside the project root too (so a cloned project can't open up your file system).
 * A module runs once per run: every `require()` of it returns the same `exports`, so module
   state carries over between requests. Module code counts against `scripts.timeout`, and its
   errors are reported at the `require()` call (with the module's own `file:line` for syntax
@@ -205,7 +206,8 @@ GET {{baseUrl}}/me
 | `monica/jsonpath` | `query(value, path)` → array of matches, `value(value, path)` → first match or `undefined`; `value` may be a JSON string |
 
 JSONPath supports `$`, `.name`, `['name']`, `[0]`, `[-1]`, `[*]`, `.*`, `..name` (recursive),
-`[start:end]` and unions (`[0,2]`, `['a','b']`); filters (`[?()]`) are not supported.
+`[start:end]` and unions (`[0,2]`, `['a','b']`); filters (`[?()]`) are not supported. `..`
+skips cycles, and a query that visits more than a million values throws.
 
 ```
 < {%
@@ -286,7 +288,7 @@ envs:                       # each env merges over defaults
       baseUrl: https://api.example.com
 scripts:
   timeout: 5s               # per script run (default 5s)
-  paths: [./lib]            # folders for require("name"), relative to monica.yml
+  paths: [./lib]            # folders for require("name"), inside monica.yml's folder
 load:                       # reserved for load testing (not used yet)
   vus: 50
   duration: 30s

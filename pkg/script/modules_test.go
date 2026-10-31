@@ -128,8 +128,11 @@ func TestRequireSymlinkOutside(t *testing.T) {
 	e := New(Options{Modules: m})
 	s := &request.Script{Source: `require("./link.js")`, File: filepath.Join(proj, "a.mon"), Line: 1}
 	_, err = e.run(s, nil, 0)
-	if err == nil || !strings.Contains(err.Error(), "outside the project root") {
+	if err == nil || !strings.Contains(err.Error(), "link.js links outside the project root") {
 		t.Fatalf("got %v, want a links-outside error", err)
+	}
+	if strings.Contains(err.Error(), out) {
+		t.Fatalf("error discloses the link target: %v", err)
 	}
 }
 
@@ -184,4 +187,61 @@ func TestRequireTimeout(t *testing.T) {
 
 func jsString(s string) string {
 	return `"` + strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\`), `"`, `\"`) + `"`
+}
+
+func TestScriptsPathsMustStayInProject(t *testing.T) {
+	dir := t.TempDir()
+	proj := filepath.Join(dir, "proj")
+	for _, d := range []string{filepath.Join(proj, "lib"), filepath.Join(dir, "outside"), filepath.Join(dir, "proj-evil")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(proj, "linked")
+	if err := os.Symlink(filepath.Join(dir, "outside"), link); err != nil {
+		t.Skip("symlinks not supported:", err)
+	}
+	tests := []struct {
+		path string
+		ok   bool
+	}{
+		{"lib", true},
+		{"./lib/../lib", true},
+		{".", true},
+		{filepath.Join(proj, "lib"), true},
+		{"not-created-yet", true},
+		{"/", false},
+		{"..", false},
+		{"../outside", false},
+		{"../proj-evil", false},
+		{filepath.Join(dir, "outside"), false},
+		{"linked", false}, // a symlink out of the project
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			_, err := NewModules(proj, []string{tt.path})
+			if tt.ok != (err == nil) {
+				t.Fatalf("NewModules(%q) error = %v, want ok=%v", tt.path, err, tt.ok)
+			}
+			if err != nil && !strings.Contains(err.Error(), "scripts.paths: ") {
+				t.Fatalf("error %v does not name scripts.paths", err)
+			}
+		})
+	}
+}
+
+func TestRequireFromEvalUsesTheCallingFile(t *testing.T) {
+	for _, code := range []string{
+		`console.log(eval("require('./lib/math')").add(1, 2))`,
+		`console.log(new Function("return require('./lib/math')")().add(1, 2))`,
+		`const r = require; console.log(r.call(null, "./lib/math").add(1, 2))`,
+	} {
+		e, out := newModEngine(t)
+		if _, err := e.run(modSrc(code), nil, 0); err != nil {
+			t.Fatalf("%s: %v", code, err)
+		}
+		if (*out)[0].msg != "3" {
+			t.Fatalf("%s: got %v", code, *out)
+		}
+	}
 }
