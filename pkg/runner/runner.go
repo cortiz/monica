@@ -38,12 +38,12 @@ type Runner struct {
 	rep      report.Reporter
 	results  []report.Request
 	start    time.Time
-	projects map[string]*project // by config path; "" = no config
-	runtime  map[string]string   // vars.set values
-	engine   *script.Engine      // created on first script
-	mask     masker              // of the request being run, for console output
-	bailed   bool                // --bail tripped: run nothing more
-	filters  []*regexp.Regexp    // compiled Opts.Filters
+	projects map[string]*project       // by config path; "" = no config
+	runtime  map[string]string         // vars.set values
+	engines  map[string]*script.Engine // by module root; created on first script
+	mask     masker                    // of the request being run, for console output
+	bailed   bool                      // --bail tripped: run nothing more
+	filters  []*regexp.Regexp          // compiled Opts.Filters
 }
 
 // project is a resolved config and what is built from it.
@@ -52,6 +52,10 @@ type project struct {
 	client        *net.Client
 	mask          masker
 	scriptTimeout time.Duration // 0 = engine default
+	// root is the require() root: the config's folder; "" without a config
+	// (then each .mon file's folder). scriptPaths are scripts.paths.
+	root        string
+	scriptPaths []string
 }
 
 // New returns a Runner printing a console report to out.
@@ -63,7 +67,7 @@ func New(opts *Opts, out io.Writer) *Runner {
 
 // NewWithReporter returns a Runner sending results to rep.
 func NewWithReporter(opts *Opts, rep report.Reporter) *Runner {
-	r := &Runner{opts: opts, rep: rep, start: time.Now(), projects: map[string]*project{}, runtime: map[string]string{}}
+	r := &Runner{opts: opts, rep: rep, start: time.Now(), projects: map[string]*project{}, runtime: map[string]string{}, engines: map[string]*script.Engine{}}
 	for _, glob := range opts.Filters {
 		r.filters = append(r.filters, globRe(glob))
 	}
@@ -208,7 +212,7 @@ func (r *Runner) runRequest(file string, req *request.Request, p *project) (repo
 	working := *req
 	working.Headers = req.Headers.Clone()
 	if req.PreScript != nil {
-		results, err := r.scripts().RunPre(req.PreScript, &working, ctx)
+		results, err := r.scripts(file, p).RunPre(req.PreScript, &working, ctx)
 		out.Tests = append(out.Tests, maskTests(p, results)...)
 		if err != nil {
 			return fail("pre-request script", err)
@@ -228,7 +232,7 @@ func (r *Runner) runRequest(file string, req *request.Request, p *project) (repo
 	out.Status, out.StatusText, out.Duration = res.StatusCode, http.StatusText(res.StatusCode), res.Duration
 	out.Response = p.mask.String(res.String())
 	if req.PostScript != nil {
-		results, err := r.scripts().RunPost(req.PostScript, rendered, res, ctx)
+		results, err := r.scripts(file, p).RunPost(req.PostScript, rendered, res, ctx)
 		out.Tests = append(out.Tests, maskTests(p, results)...)
 		if err != nil {
 			return fail("post-response script", err)
@@ -262,23 +266,35 @@ func testFailures(tests []script.TestResult) error {
 	return fmt.Errorf("%d of %d tests failed: %s", len(failed), len(tests), strings.Join(failed, "; "))
 }
 
-// scripts returns the run's script engine, creating it on first use.
-// Console output is masked like everything else.
-func (r *Runner) scripts() *script.Engine {
-	if r.engine == nil {
-		r.engine = script.New(script.Options{Console: func(level, msg string) {
-			msg = "console." + level + ": " + r.mask.String(msg)
-			switch level {
-			case "warn":
-				logging.Log.Warn().Msg(msg)
-			case "error":
-				logging.Log.Error().Msg(msg)
-			default:
-				logging.Log.Info().Msg(msg)
-			}
-		}})
+// scripts returns the script engine for file's module root, creating it on
+// first use. Engines share the run's vars; each has its own require() root
+// and module instances. Console output is masked like everything else.
+func (r *Runner) scripts(file string, p *project) *script.Engine {
+	root := p.root
+	if root == "" {
+		root = filepath.Dir(file)
 	}
-	return r.engine
+	if e, ok := r.engines[root]; ok {
+		return e
+	}
+	modules, err := script.NewModules(root, p.scriptPaths)
+	if err != nil {
+		// The root or a scripts.paths folder is unreadable: run without require().
+		logging.Log.Warn().Msgf("%s: require() disabled: %v", file, err)
+	}
+	e := script.New(script.Options{Modules: modules, Console: func(level, msg string) {
+		msg = "console." + level + ": " + r.mask.String(msg)
+		switch level {
+		case "warn":
+			logging.Log.Warn().Msg(msg)
+		case "error":
+			logging.Log.Error().Msg(msg)
+		default:
+			logging.Log.Info().Msg(msg)
+		}
+	}})
+	r.engines[root] = e
+	return e
 }
 
 // lookup resolves a variable: --var, then vars.set values, then config vars.
@@ -339,6 +355,8 @@ func (r *Runner) project(file string) (*project, error) {
 	}
 	settings := config.Builtin()
 	var scriptTimeout time.Duration
+	var root string
+	var scriptPaths []string
 	if path == "" {
 		if r.opts.Env != "" {
 			logging.Log.Warn().Msgf("%s: no %s found; ignoring environment %q", file, config.FileName, r.opts.Env)
@@ -353,6 +371,7 @@ func (r *Runner) project(file string) (*project, error) {
 			return nil, err
 		}
 		scriptTimeout = cfg.Scripts.Timeout.Duration
+		root, scriptPaths = filepath.Dir(path), cfg.Scripts.Paths
 	}
 	p := &project{
 		settings: settings,
@@ -363,6 +382,8 @@ func (r *Runner) project(file string) (*project, error) {
 		}),
 		mask:          newMasker(settings.Secrets),
 		scriptTimeout: scriptTimeout,
+		root:          root,
+		scriptPaths:   scriptPaths,
 	}
 	r.projects[path] = p
 	return p, nil
