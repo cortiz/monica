@@ -194,6 +194,35 @@ GET {{baseUrl}}/me
   errors are reported at the `require()` call (with the module's own `file:line` for syntax
   errors).
 
+**Built-in modules** (implemented in Go, always available; strings are UTF-8):
+
+| Module | Exports |
+|--------|---------|
+| `monica/crypto` | `sha256(data[, enc])`, `sha512`, `sha1`, `md5`, `hmac(alg, key, data[, enc])` with `alg` one of `sha256`, `sha512`, `sha1`, `md5`; `enc` is `hex` (default), `base64` or `base64url` |
+| `monica/encoding` | `base64Encode/Decode`, `base64UrlEncode/Decode` (unpadded; decoding accepts both), `hexEncode/Decode`, `urlEncode/Decode` (form encoding: space ↔ `+`) |
+| `monica/random` | `uuid()` (v4), `int(min, max)` (inclusive), `string(length[, alphabet])` (default `A-Za-z0-9`); all from a cryptographic source |
+| `monica/jsonpath` | `query(value, path)` → array of matches, `value(value, path)` → first match or `undefined`; `value` may be a JSON string |
+
+JSONPath supports `$`, `.name`, `['name']`, `[0]`, `[-1]`, `[*]`, `.*`, `..name` (recursive),
+`[start:end]` and unions (`[0,2]`, `['a','b']`); filters (`[?()]`) are not supported.
+
+```
+< {%
+  const { hmac } = require("monica/crypto");
+  req.headers.set("X-Signature", hmac("sha256", vars.get("apiSecret"), req.body));
+%}
+POST {{baseUrl}}/orders
+Content-Type: application/json
+
+{"id": 1}
+
+> {%
+  const jp = require("monica/jsonpath");
+  vars.set("orderId", jp.value(res.body, "$.order.id"));
+  test("all items priced", () => expect(jp.query(res.json(), "$.items[*].price")).not.toContain(null));
+%}
+```
+
 ## Configuration
 
 `monica.yml` holds settings and variables shared by `.mon` files. For each `.mon` file Monica

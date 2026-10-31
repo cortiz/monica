@@ -67,6 +67,7 @@ func NewModules(projectRoot string, paths []string) (*Modules, error) {
 		require.WithPathResolver(resolvePath),
 		require.WithGlobalFolders(m.paths...),
 	)
+	registerBuiltins(m.reg)
 	return m, nil
 }
 
