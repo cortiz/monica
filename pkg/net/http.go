@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"strings"
 	"time"
 
@@ -83,6 +84,8 @@ func (c *Client) DoContext(ctx context.Context, request *request.Request, header
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel() // after the body has been read
 	}
+	tr := &tracer{}
+	ctx = httptrace.WithClientTrace(ctx, tr.trace())
 	req, err := http.NewRequestWithContext(ctx, request.Method, request.URL, strings.NewReader(request.Body))
 	if err != nil {
 		return nil, fmt.Errorf("creating HTTP request: %w", err)
@@ -118,6 +121,7 @@ func (c *Client) DoContext(ctx context.Context, request *request.Request, header
 		Status:     resp.Proto + " " + resp.Status,
 		StatusCode: resp.StatusCode,
 		Headers:    resp.Header,
+		BytesSent:  int64(len(request.Body)),
 	}
 	if !headerOnly {
 		bodyBytes, err := io.ReadAll(resp.Body)
@@ -128,7 +132,10 @@ func (c *Client) DoContext(ctx context.Context, request *request.Request, header
 			return nil, fmt.Errorf("reading response body: %w", err)
 		}
 		response.Body = string(bodyBytes)
+		response.BytesReceived = int64(len(bodyBytes))
 	}
-	response.Duration = time.Since(start)
+	end := time.Now()
+	response.Duration = end.Sub(start)
+	response.Timings = tr.timings(end)
 	return response, nil
 }

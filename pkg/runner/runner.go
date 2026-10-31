@@ -340,6 +340,7 @@ func (r *Runner) attempt(file, where string, req *request.Request, p *project, c
 	}
 	logging.Log.Debug().Msg(p.mask.String(fmt.Sprintf("%s %s -> %d in %s", rendered.Method, rendered.URL, res.StatusCode, res.Duration)))
 	out.Status, out.StatusText, out.Duration = res.StatusCode, http.StatusText(res.StatusCode), res.Duration
+	out.Timings, out.BytesSent, out.BytesReceived = res.Timings, res.BytesSent, res.BytesReceived
 	out.Response = p.mask.String(res.String())
 	// afterEach hooks run even when the post-response script failed; the
 	// first error is the one reported.
