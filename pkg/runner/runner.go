@@ -44,6 +44,10 @@ type Runner struct {
 	mask     masker                    // of the request being run, for console output
 	bailed   bool                      // --bail tripped: run nothing more
 	filters  []*regexp.Regexp          // compiled Opts.Filters
+
+	chains    map[string][]*hookFile // monica.js chain by folder and root
+	hookFiles map[string]*hookFile   // by absolute path; nil = none there
+	entered   []*hookFile            // beforeAll done, in order: afterAll pending
 }
 
 // project is a resolved config and what is built from it.
@@ -67,7 +71,8 @@ func New(opts *Opts, out io.Writer) *Runner {
 
 // NewWithReporter returns a Runner sending results to rep.
 func NewWithReporter(opts *Opts, rep report.Reporter) *Runner {
-	r := &Runner{opts: opts, rep: rep, start: time.Now(), projects: map[string]*project{}, runtime: map[string]string{}, engines: map[string]*script.Engine{}}
+	r := &Runner{opts: opts, rep: rep, start: time.Now(), projects: map[string]*project{}, runtime: map[string]string{}, engines: map[string]*script.Engine{},
+		chains: map[string][]*hookFile{}, hookFiles: map[string]*hookFile{}}
 	for _, glob := range opts.Filters {
 		r.filters = append(r.filters, globRe(glob))
 	}
@@ -84,8 +89,11 @@ func RunSingleFile(file string, opts *Opts, out io.Writer) error {
 	return err
 }
 
-// Finish sends the run summary to the reporter.
+// Finish runs pending afterAll hooks (if AfterAll was not called) and sends
+// the run summary to the reporter. It returns the reporter's error; hook
+// failures are in the report.
 func (r *Runner) Finish() error {
+	_ = r.AfterAll()
 	return r.rep.Done(report.Summarize(r.results, time.Since(r.start)))
 }
 
@@ -155,7 +163,17 @@ func (r *Runner) RunFile(file string) error {
 			logging.Log.Debug().Msgf("%s:%d: %s does not match --filter", file, req.Line, req.Label())
 			continue
 		}
-		res, err := r.runRequest(file, req, p)
+		var chain []*hookFile
+		if !req.Skip {
+			chain = r.hookChain(file, p)
+			if err := r.enterHooks(chain); err != nil {
+				errs = append(errs, err)
+				if r.bailed {
+					break
+				}
+			}
+		}
+		res, err := r.runRequest(file, req, p, chain)
 		r.emit(res)
 		if err != nil {
 			errs = append(errs, err)
@@ -174,10 +192,11 @@ func fileFailure(file string, err error) report.Request {
 	return res
 }
 
-// runRequest runs one request: pre-request script, {{}} expansion, send,
-// post-response script. It returns the (masked) report entry and the error,
-// if any, that fails the run.
-func (r *Runner) runRequest(file string, req *request.Request, p *project) (report.Request, error) {
+// runRequest runs one request: beforeEach hooks, pre-request script, {{}}
+// expansion, send, post-response script, afterEach hooks (innermost
+// first). It returns the (masked) report entry and the error, if any, that
+// fails the run. A request under a failed monica.js is skipped.
+func (r *Runner) runRequest(file string, req *request.Request, p *project, chain []*hookFile) (report.Request, error) {
 	where := fmt.Sprintf("%s:%d", file, req.Line)
 	out := report.Request{File: file, Line: req.Line, Name: req.Label(), Method: req.Method, URL: p.mask.String(req.URL)}
 	if req.Skip {
@@ -187,6 +206,11 @@ func (r *Runner) runRequest(file string, req *request.Request, p *project) (repo
 		}
 		logging.Log.Info().Msg(msg)
 		out.Skipped, out.SkipReason = true, req.SkipReason
+		return out, nil
+	}
+	if h := blockedBy(chain); h != nil {
+		out.Skipped, out.SkipReason = true, "hooks in "+h.file+" failed"
+		logging.Log.Warn().Msgf("%s: skipping %s: %s", where, req.Label(), out.SkipReason)
 		return out, nil
 	}
 	logging.Log.Info().Msgf("%s: %s", where, req.Label())
@@ -208,9 +232,16 @@ func (r *Runner) runRequest(file string, req *request.Request, p *project) (repo
 		return out, full
 	}
 
-	ctx := script.Context{Env: p.settings.Env, Vars: &runVars{r: r, s: p.settings}, Timeout: p.scriptTimeout}
+	ctx := r.hookContext(p)
 	working := *req
 	working.Headers = req.Headers.Clone()
+	for _, h := range chain {
+		results, err := h.engine.RunBeforeEach(h.hooks, &working, ctx)
+		out.Tests = append(out.Tests, maskTests(p, results)...)
+		if err != nil {
+			return fail("beforeEach hook ("+h.file+")", err)
+		}
+	}
 	if req.PreScript != nil {
 		results, err := r.scripts(file, p).RunPre(req.PreScript, &working, ctx)
 		out.Tests = append(out.Tests, maskTests(p, results)...)
@@ -231,12 +262,27 @@ func (r *Runner) runRequest(file string, req *request.Request, p *project) (repo
 	logging.Log.Debug().Msg(p.mask.String(fmt.Sprintf("%s %s -> %d in %s", rendered.Method, rendered.URL, res.StatusCode, res.Duration)))
 	out.Status, out.StatusText, out.Duration = res.StatusCode, http.StatusText(res.StatusCode), res.Duration
 	out.Response = p.mask.String(res.String())
+	// afterEach hooks run even when the post-response script failed; the
+	// first error is the one reported.
+	var postErr error
+	var postStage string
 	if req.PostScript != nil {
 		results, err := r.scripts(file, p).RunPost(req.PostScript, rendered, res, ctx)
 		out.Tests = append(out.Tests, maskTests(p, results)...)
 		if err != nil {
-			return fail("post-response script", err)
+			postErr, postStage = err, "post-response script"
 		}
+	}
+	for i := len(chain) - 1; i >= 0; i-- {
+		h := chain[i]
+		results, err := h.engine.RunAfterEach(h.hooks, rendered, res, ctx)
+		out.Tests = append(out.Tests, maskTests(p, results)...)
+		if err != nil && postErr == nil {
+			postErr, postStage = err, "afterEach hook ("+h.file+")"
+		}
+	}
+	if postErr != nil {
+		return fail(postStage, postErr)
 	}
 	if err := testFailures(out.Tests); err != nil {
 		return out, fmt.Errorf("%s: %s: %w", where, req.Label(), err)
