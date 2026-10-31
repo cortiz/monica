@@ -3,12 +3,13 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"jmpeax.com/sec/monica/internal/config"
 	"jmpeax.com/sec/monica/internal/logging"
 	"jmpeax.com/sec/monica/pkg/runner"
 )
@@ -16,18 +17,29 @@ import (
 var (
 	singleFile     string
 	recursiveLevel int
+	envName        string
+	varFlags       []string
+	configPath     string
 	run            = &cobra.Command{
 		Use:   "run",
 		Short: "Runs all mon files",
 		Long:  "Runs all mon files found in the current working directory",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Flags parsed fine; from here on failures are not usage problems.
-			cmd.SilenceUsage = true
-			opts := &runner.Opts{HeaderOnly: false}
-			if singleFile != "" {
-				return runSingleFile(singleFile, opts, cmd.OutOrStdout())
+			vars, err := parseVars(varFlags)
+			if err != nil {
+				return &exitError{code: ExitUsage, err: err}
 			}
-			return runAllFiles(recursiveLevel, opts, cmd.OutOrStdout())
+			cmd.SilenceUsage = true
+			env := envName
+			if !cmd.Flags().Changed("env") {
+				env = os.Getenv(config.EnvVar)
+			}
+			r := runner.New(&runner.Opts{Env: env, Vars: vars, ConfigPath: configPath}, cmd.OutOrStdout())
+			if singleFile != "" {
+				return runSingleFile(r, singleFile)
+			}
+			return runAllFiles(r, recursiveLevel)
 		},
 	}
 )
@@ -35,10 +47,28 @@ var (
 func init() {
 	run.Flags().StringVarP(&singleFile, "single", "s", "", "runs a single mon file, path can be absolute o relative to current working directory")
 	run.Flags().IntVarP(&recursiveLevel, "recursive", "r", 1, "runs all mon files in the current working directory and subdirectories up to the specified level")
+	run.Flags().StringVarP(&envName, "env", "e", "", "environment from monica.yml (default $"+config.EnvVar+")")
+	run.Flags().StringArrayVar(&varFlags, "var", nil, "set a variable, name=value (repeatable; overrides monica.yml)")
+	run.Flags().StringVarP(&configPath, "config", "c", "", "config file to use instead of the nearest monica.yml")
 }
 
-func runSingleFile(file string, opts *runner.Opts, out io.Writer) error {
-	if err := runner.RunSingleFile(file, opts, out); err != nil {
+var varNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*$`)
+
+// parseVars turns --var name=value flags into a map; later flags win.
+func parseVars(flags []string) (map[string]string, error) {
+	vars := make(map[string]string, len(flags))
+	for _, f := range flags {
+		name, value, ok := strings.Cut(f, "=")
+		if !ok || !varNameRe.MatchString(name) {
+			return nil, fmt.Errorf("invalid --var %q (expected name=value)", f)
+		}
+		vars[name] = value
+	}
+	return vars, nil
+}
+
+func runSingleFile(r *runner.Runner, file string) error {
+	if err := r.RunFile(file); err != nil {
 		return classify(err)
 	}
 	return nil
@@ -46,7 +76,7 @@ func runSingleFile(file string, opts *runner.Opts, out io.Writer) error {
 
 // runAllFiles runs every .mon file, continuing past failures, and returns an
 // error carrying the most severe exit code seen.
-func runAllFiles(level int, opts *runner.Opts, out io.Writer) error {
+func runAllFiles(r *runner.Runner, level int) error {
 	files, err := FindMonFiles(".", level)
 	if err != nil {
 		return &exitError{code: ExitUsage, err: fmt.Errorf("finding mon files: %w", err)}
@@ -54,7 +84,7 @@ func runAllFiles(level int, opts *runner.Opts, out io.Writer) error {
 	logging.Log.Info().Msgf("Found %d mon files", len(files))
 	worst, failed := ExitOK, 0
 	for _, file := range files {
-		if err := runner.RunSingleFile(file, opts, out); err != nil {
+		if err := r.RunFile(file); err != nil {
 			failed++
 			logging.Log.Error().Msg(err.Error())
 			if code := exitCode(classify(err)); code > worst {

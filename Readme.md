@@ -17,6 +17,19 @@ Monica is designed to handle Network requests and responses.
 	monica run -s <file>
 	```
 
+* Pick an environment, override variables, or use a specific config file
+	```bash
+	monica run --env dev --var token=abc --var id=7 --config ./monica.yml
+	```
+
+| Flag | Meaning |
+|------|---------|
+| `-s, --single <file>` | Run one `.mon` file |
+| `-r, --recursive <n>` | Directory depth to search for `.mon` files (default 1) |
+| `-e, --env <name>` | Environment from `monica.yml` (default `$MONICA_ENV`) |
+| `--var name=value` | Set a variable; repeatable, overrides `monica.yml` |
+| `-c, --config <file>` | Use this config instead of the nearest `monica.yml` |
+
 Responses are printed to stdout; logs and errors go to stderr.
 
 ### Exit codes
