@@ -101,7 +101,9 @@ func (e *Engine) format(v goja.Value) string {
 // compile compiles s once. The source is prefixed with blank lines so goja's
 // line numbers are the script's lines in its file, and wrapped in a function
 // so top-level declarations don't leak between scripts (the wrapper sits on
-// the script's first line and only shifts that line's columns).
+// the script's first line and only shifts that line's columns). TypeScript
+// script files and scripts with import/export statements are transpiled
+// first (see transpile).
 func (e *Engine) compile(s *request.Script) (*goja.Program, error) {
 	if p, ok := e.programs[s]; ok {
 		return p, nil
@@ -114,7 +116,19 @@ func (e *Engine) compile(s *request.Script) (*goja.Program, error) {
 	if name == "" {
 		name = "script"
 	}
-	p, err := goja.Compile(name, pad+"(function(){"+s.Source+"\n})();", false)
+	src, tail := pad+s.Source, ""
+	if loader, ok := transpileLoader(name, s.Source); ok {
+		code, err := transpile(name, src, loader)
+		if err != nil {
+			return nil, err
+		}
+		// The padding is part of the source map, so lines stay the file's.
+		src, tail = splitSourceMap(code)
+		pad = ""
+	} else {
+		src = s.Source
+	}
+	p, err := goja.Compile(name, pad+"(function(){"+src+"\n})();\n"+tail, false)
 	if err != nil {
 		return nil, err
 	}

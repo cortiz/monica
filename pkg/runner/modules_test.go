@@ -27,6 +27,16 @@ func TestRunRequire(t *testing.T) {
 			mon: "api/users/a.mon",
 		},
 		{
+			name: "TypeScript lib, import in a block and a .ts script file",
+			files: map[string]string{
+				"monica.yml":      "version: 1\nscripts:\n  paths: [./lib]\n",
+				"lib/auth.ts":     "export const bearer = (n: number): string => `Bearer ${n}`;\n",
+				"tests/check.ts":  "import { bearer } from 'auth';\nconst want: string = bearer(42);\ntest('ts', () => expect(res.body).toContain(want));\n",
+				"api/users/a.mon": "< {%\n  import { bearer } from 'auth';\n  req.headers.set('X-Pre', bearer(42));\n%}\nGET " + srv.URL + "/echo\n\n> ../../tests/check.ts\n",
+			},
+			mon: "api/users/a.mon",
+		},
+		{
 			name: "traversal above the config folder is rejected",
 			files: map[string]string{
 				"monica.yml": "version: 1\n",
