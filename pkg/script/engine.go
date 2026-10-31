@@ -4,6 +4,7 @@ package script
 import (
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/dop251/goja"
 	"jmpeax.com/sec/monica/internal/logging"
@@ -105,11 +106,12 @@ func (e *Engine) compile(s *request.Script) (*goja.Program, error) {
 	return p, nil
 }
 
-// run executes s with globals visible for this run only.
-func (e *Engine) run(s *request.Script, globals map[string]any) error {
+// run executes s with globals visible for this run only, interrupting it
+// after timeout (DefaultTimeout when zero). Failures are *Error.
+func (e *Engine) run(s *request.Script, globals map[string]any, timeout time.Duration) error {
 	prog, err := e.compile(s)
 	if err != nil {
-		return err
+		return toError(s, err)
 	}
 	for name, v := range globals {
 		if err := e.rt.Set(name, v); err != nil {
@@ -121,6 +123,8 @@ func (e *Engine) run(s *request.Script, globals map[string]any) error {
 			_ = e.rt.GlobalObject().Delete(name)
 		}
 	}()
+	stop := e.interruptAfter(timeout)
 	_, err = e.rt.RunProgram(prog)
-	return err
+	stop()
+	return toError(s, err)
 }

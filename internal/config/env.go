@@ -180,6 +180,9 @@ func (c *Config) mergeLocal(local *Config) {
 	for name, e := range local.Envs {
 		c.Envs[name] = mergeSettings(c.Envs[name], e)
 	}
+	if local.Scripts.Timeout.Duration > 0 {
+		c.Scripts.Timeout = local.Scripts.Timeout
+	}
 	if local.Scripts.Paths != nil {
 		c.Scripts.Paths = local.Scripts.Paths
 	}

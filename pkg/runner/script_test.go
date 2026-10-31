@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog"
 	"jmpeax.com/sec/monica/internal/logging"
@@ -92,13 +93,21 @@ func TestRunScripts(t *testing.T) {
 			name:    "pre script error: request not sent, run fails",
 			mon:     "< {% throw new Error(\"nope\") %}\nGET " + srv.URL + "/never\n###\nGET " + srv.URL + "/after\n",
 			wantOut: []string{"GET /after"},
-			wantErr: "test.mon:2: GET " + srv.URL + "/never: pre-request script: Error: nope",
+			wantErr: "test.mon:2: GET " + srv.URL + "/never: pre-request script: ",
 		},
+		{
+			name:      "syntax error is an input error with the script's line",
+			mon:       "GET " + srv.URL + "/echo\n\n> {%\n  const x = ;\n%}\n",
+			wantOut:   []string{"GET /echo"},
+			wantErr:   "test.mon:4:",
+			wantInput: true,
+		},
+
 		{
 			name:    "post script error fails the request after printing it",
 			mon:     "GET " + srv.URL + "/echo\n> {% res.json() %}\n",
 			wantOut: []string{"GET /echo"},
-			wantErr: "post-response script: TypeError: res.json(): body is not valid JSON",
+			wantErr: "test.mon:2:22: TypeError: res.json(): body is not valid JSON (SyntaxError: invalid character",
 		},
 	}
 	for _, tt := range tests {
@@ -166,5 +175,23 @@ func TestConsoleOutputIsMasked(t *testing.T) {
 	}
 	if strings.Contains(logs.String(), "hunter2") || !strings.Contains(logs.String(), "key is ****") {
 		t.Fatalf("console output not masked: %s", logs.String())
+	}
+}
+
+func TestScriptTimeoutFromConfig(t *testing.T) {
+	srv, seen := apiServer(t)
+	dir := t.TempDir()
+	write(t, dir, "monica.yml", "version: 1\nscripts:\n  timeout: 100ms\n")
+	mon := write(t, dir, "t.mon", "< {% while (true) {} %}\nGET "+srv.URL+"/never\n")
+	start := time.Now()
+	err := runner.RunSingleFile(mon, &runner.Opts{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "t.mon:1: script timed out after 100ms") {
+		t.Fatalf("expected a timeout at t.mon:1, got %v", err)
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Fatalf("scripts.timeout not applied (took %s)", time.Since(start))
+	}
+	if len(*seen) != 0 {
+		t.Fatalf("request must not be sent, server saw %v", *seen)
 	}
 }

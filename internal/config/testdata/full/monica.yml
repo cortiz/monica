@@ -18,6 +18,7 @@ envs:
     vars:
       baseUrl: https://api.example.com
 scripts:
+  timeout: 2s
   paths: [./lib]
 load:
   vus: 50
