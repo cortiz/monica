@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/require"
@@ -22,9 +23,10 @@ import (
 // it; each Engine still gets its own module instances. A Modules is safe
 // for concurrent use.
 type Modules struct {
-	roots []root
-	paths []string // bare-name lookup folders (absolute)
-	reg   *require.Registry
+	roots      []root
+	paths      []string // bare-name lookup folders (absolute)
+	reg        *require.Registry
+	transpiled sync.Map // module path -> true when loaded through transpile
 }
 
 // root is an allowed folder, as written and with symlinks resolved.
@@ -119,7 +121,44 @@ func (e *errOutside) Error() string {
 // load is the sandboxed SourceLoader. Paths outside the roots don't exist
 // as far as module lookup goes (node_modules lookup walks up to the file
 // system root); a file inside that links out is an error.
+//
+// ES module and TypeScript files are transpiled to CommonJS. A missing x.js
+// (x.mjs, x.cjs) falls back to x.ts (x.mts, x.cts), so require("./x") and
+// TypeScript's own "./x.js" imports find x.ts.
 func (m *Modules) load(path string) ([]byte, error) {
+	file := path
+	src, err := m.readFile(file)
+	if errors.Is(err, require.ModuleFileDoesNotExistError) {
+		if ts, ok := tsFallback[strings.ToLower(filepath.Ext(path))]; ok {
+			file = strings.TrimSuffix(path, filepath.Ext(path)) + ts
+			src, err = m.readFile(file)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	loader, ok := transpileLoader(file, string(src))
+	if !ok {
+		return src, nil
+	}
+	code, err := transpile(file, string(src), loader)
+	if err != nil {
+		return nil, err
+	}
+	m.transpiled.Store(path, true)
+	return []byte(code), nil
+}
+
+var tsFallback = map[string]string{".js": ".ts", ".mjs": ".mts", ".cjs": ".cts"}
+
+// isTranspiled reports whether the module at path was transpiled.
+func (m *Modules) isTranspiled(path string) bool {
+	_, ok := m.transpiled.Load(path)
+	return ok
+}
+
+// readFile reads the module file at path, within the roots.
+func (m *Modules) readFile(path string) ([]byte, error) {
 	if !m.inside(path, false) {
 		return nil, require.ModuleFileDoesNotExistError
 	}

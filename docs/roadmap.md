@@ -173,7 +173,7 @@ Matchers: `toBe, toEqual (deep), toContain, toMatch, toBeLessThan/GreaterThan, t
 
 ---
 
-## Phase 5 — Modules & code reuse `github.com/dop251/goja_nodejs` ✅ done (5.5 deferred)
+## Phase 5 — Modules & code reuse `github.com/dop251/goja_nodejs` ✅ done
 
 | ID | Task | Size |
 |----|------|------|
@@ -181,7 +181,7 @@ Matchers: `toBe, toEqual (deep), toContain, toMatch, toBeLessThan/GreaterThan, t
 | 5.2 | `node_modules` CommonJS packages | S |
 | 5.3 | Built-in `monica/*` modules (Go) | M |
 | 5.4 | Folder-level hooks `monica.js` | M |
-| 5.5 | *(optional)* ESM/TypeScript via esbuild 🔒 | L |
+| 5.5 | ESM/TypeScript via esbuild | L |
 
 **5.1** Custom `SourceLoader` restricted to project root + `scripts.paths`; path traversal rejected.
 Compiled modules cached and shared across runtimes.
@@ -197,7 +197,8 @@ Applies to the folder and below, up to the project root; `beforeAll` runs lazily
 folder's first executed request, `afterAll` at the end of the run (see Readme).
 
 **5.5** Only if needed: embed `github.com/evanw/esbuild/pkg/api` to transpile ESM/TS on load.
-Deferred: not needed yet (UMD/CJS packages cover the common libraries); revisit on demand.
+Done: `.ts/.mts/.cts/.mjs` and `.js` files with `import`/`export` are transpiled to CommonJS
+on load (modules, script files and `{% %}` blocks), with inline source maps for error lines.
 
 ---
 
@@ -311,7 +312,7 @@ so each source only implements parsing.
 | `gopkg.in/yaml.v3` | 2 | ✅ direct |
 | `github.com/dop251/goja` | 3 | ✅ approved, pinned to 2025-06-30 (Go 1.22 compatible) |
 | `github.com/dop251/goja_nodejs` | 5 | ✅ approved (2026-09-18 commit; needs goja ≥ 2025-03) |
-| `github.com/evanw/esbuild` | 5.5 | 🔒 optional |
+| `github.com/evanw/esbuild` | 5.5 | ✅ approved (v0.28.2, Go 1.13+) |
 | `github.com/charmbracelet/bubbletea`, `bubbles`, `lipgloss` | 9.1 | 🔒 needs approval |
 
 Postman and Bruno import need no new dependencies (stdlib JSON + hand-written `.bru` parser).

@@ -60,6 +60,10 @@ func toError(s *request.Script, err error) error {
 	if name == "" {
 		name = "script"
 	}
+	var tse *syntaxError
+	if errors.As(err, &tse) {
+		return &Error{Kind: KindSyntax, File: name, Line: tse.line, Column: tse.col, Msg: "SyntaxError: " + tse.msg}
+	}
 	var syn *goja.CompilerSyntaxError
 	if errors.As(err, &syn) {
 		e := &Error{Kind: KindSyntax, File: name, Msg: "SyntaxError: " + syn.Message}

@@ -109,7 +109,7 @@ share data between requests with `vars`.
 | `monica.env` (selected environment or `""`) | ✓ | ✓ |
 | `console.log/info/warn/error` (to the log, secrets masked) | ✓ | ✓ |
 | `test(name, fn)`, `expect(value)` | ✓ | ✓ |
-| `require(path)` ([Modules](#modules)) | ✓ | ✓ |
+| `require(path)`, `import` statements ([Modules](#modules)) | ✓ | ✓ |
 
 `vars.set` stores the value as a string; it is visible to every later request of the run,
 including those in later files, but `--var` still wins.
@@ -144,7 +144,7 @@ GET {{baseUrl}}/users/1
 ```
 
 **Errors** point at the line in the script's own file: the `.mon` file for `{% %}` blocks, the
-`.js` file for script files, e.g. `api.mon:12:5: TypeError: Cannot read property 'id' of
+`.js`/`.ts` file for script files, e.g. `api.mon:12:5: TypeError: Cannot read property 'id' of
 undefined`. A pre-request script that throws or times out stops its request from being sent; a
 post-response script that throws fails the request (exit 1). A script that doesn't compile is
 an input error (exit 2). Each run is limited by `scripts.timeout` (default 5s).
@@ -176,6 +176,22 @@ exports.bearer = (token) => "Bearer " + token;
 GET {{baseUrl}}/me
 ```
 
+or, as ES modules / TypeScript:
+
+```ts
+// lib/auth.ts
+export const bearer = (token: string): string => `Bearer ${token}`;
+```
+```
+< {%
+  import { bearer } from "auth";
+  req.headers.set("Authorization", bearer(vars.get("token")));
+%}
+GET {{baseUrl}}/me
+
+> ./tests/me.ts
+```
+
 * **Files** — `./x` and `../x` are relative to the requiring file (the `.mon` file for
   `{% %}` blocks, the `.js` file for script files and modules). `x`, `x.js`, `x.json` and
   `x/index.js` are tried in that order; `.json` files are parsed.
@@ -186,7 +202,17 @@ GET {{baseUrl}}/me
 * **npm packages** — install with `npm install` next to `monica.yml`. Only pure-JavaScript
   CommonJS (or UMD) packages work: e.g. `lodash`, `dayjs`, `ajv`, `crypto-js`. Packages that
   need Node.js core modules (`fs`, `http`, `crypto`, …) such as `axios` or `uuid` fail with
-  `Node.js core modules are not available`; ES modules (`import`/`export`) are not supported.
+  `Node.js core modules are not available`.
+* **ES modules and TypeScript** — `.ts`, `.mts`, `.cts` and `.mjs` files, and `.js` files that
+  use `import`/`export` statements, are transpiled to CommonJS when loaded (with
+  [esbuild](https://esbuild.github.io), built in). Types are stripped, not checked. Error
+  positions stay the original file's lines. `require("./x")` and `import "./x.js"` also find
+  `x.ts` (and `index.ts` in a folder). `{% %}` blocks and script files (`> ./tests/me.ts`) may
+  use `import` statements too; `export` makes no sense there. A `require()` of an ES module returns its exports
+  (`default` holds the default export); `import x from "pkg"` of a CommonJS package gets
+  `module.exports`. Top-level `await` is not supported. A large ES module package is slower
+  to load the first time in a run (e.g. ~1s for all of `lodash-es`): import its single-function
+  files (`lodash-es/debounce.js`) when that matters.
 * **Sandbox** — only files under the project root (the folder of `monica.yml`, or of the
   `.mon` file when there is none) can be loaded; anything else, including `../` traversal,
   absolute paths and symlinks pointing out, fails with an error. `scripts.paths` folders must

@@ -27,9 +27,10 @@ var allHooks = []Hook{BeforeAll, BeforeEach, AfterEach, AfterAll}
 
 // Hooks are the hook functions a monica.js module exports.
 type Hooks struct {
-	file  string // as given to LoadHooks, for messages
-	abs   string // module path, as goja names its frames
-	funcs map[Hook]goja.Callable
+	file       string // as given to LoadHooks, for messages
+	abs        string // module path, as goja names its frames
+	funcs      map[Hook]goja.Callable
+	transpiled bool // positions come from a source map: no wrapper shift
 }
 
 // Has reports whether the module exports hook h.
@@ -59,9 +60,23 @@ func (e *Engine) LoadHooks(file string, ctx Context) (*Hooks, error) {
 	if err != nil {
 		return nil, h.locate(err)
 	}
+	h.transpiled = e.modules.isTranspiled(abs)
 	obj, ok := exports.(*goja.Object)
 	if !ok {
 		return nil, fmt.Errorf("%s: module.exports must be an object of hook functions", file)
+	}
+	// An ES module's "export default { ... }" holds the hooks when it
+	// has no named hook exports.
+	if def, ok := obj.Get("default").(*goja.Object); ok && obj.Get("__esModule") != nil && obj.Get("__esModule").ToBoolean() {
+		named := false
+		for _, name := range allHooks {
+			if v := obj.Get(string(name)); v != nil && !goja.IsUndefined(v) {
+				named = true
+			}
+		}
+		if !named {
+			obj = def
+		}
 	}
 	for _, name := range allHooks {
 		v := obj.Get(string(name))
@@ -141,7 +156,9 @@ func (h *Hooks) locate(err error) error {
 	var se *Error
 	if errors.As(err, &se) && se.File == h.abs {
 		se.File = h.file
-		se.Column = moduleColumn(se.Line, se.Column)
+		if !h.transpiled {
+			se.Column = moduleColumn(se.Line, se.Column)
+		}
 	}
 	return err
 }
