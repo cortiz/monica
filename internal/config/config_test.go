@@ -45,7 +45,7 @@ func TestLoadFull(t *testing.T) {
 			"dev":  {Vars: map[string]string{"baseUrl": "http://localhost:8080", "pass": "${DEV_PASSWORD}"}},
 			"prod": {Timeout: dur(10 * time.Second), Vars: map[string]string{"baseUrl": "https://api.example.com"}},
 		},
-		Scripts: Scripts{Paths: []string{"./lib"}},
+		Scripts: Scripts{Timeout: dur(2 * time.Second), Paths: []string{"./lib"}},
 		Load:    LoadSettings{VUs: 50, Duration: dur(30 * time.Second), Thresholds: []string{"p95<300ms", "errors<1%"}},
 	}
 	if !reflect.DeepEqual(got, want) {

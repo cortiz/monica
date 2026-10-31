@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"time"
 
 	"jmpeax.com/sec/monica/internal/config"
 	"jmpeax.com/sec/monica/internal/logging"
@@ -38,9 +39,10 @@ type Runner struct {
 
 // project is a resolved config and what is built from it.
 type project struct {
-	settings *config.Resolved
-	client   *net.Client
-	mask     masker
+	settings      *config.Resolved
+	client        *net.Client
+	mask          masker
+	scriptTimeout time.Duration // 0 = engine default
 }
 
 // New returns a Runner writing responses to out.
@@ -80,12 +82,12 @@ func (r *Runner) RunFile(file string) error {
 		}
 		logging.Log.Info().Msgf("%s: %s", where, req.Label())
 		r.mask = p.mask
-		ctx := script.Context{Env: p.settings.Env, Vars: &runVars{r: r, s: p.settings}}
+		ctx := script.Context{Env: p.settings.Env, Vars: &runVars{r: r, s: p.settings}, Timeout: p.scriptTimeout}
 		working := *req
 		working.Headers = req.Headers.Clone()
 		if req.PreScript != nil {
 			if err := r.scripts().RunPre(req.PreScript, &working, ctx); err != nil {
-				errs = append(errs, p.mask.Error(fmt.Errorf("%s: %s: pre-request script: %w", where, req.Label(), err)))
+				errs = append(errs, scriptFailure(p, fmt.Errorf("%s: %s: pre-request script: %w", where, req.Label(), err)))
 				continue
 			}
 		}
@@ -105,11 +107,22 @@ func (r *Runner) RunFile(file string) error {
 		}
 		if req.PostScript != nil {
 			if err := r.scripts().RunPost(req.PostScript, rendered, res, ctx); err != nil {
-				errs = append(errs, p.mask.Error(fmt.Errorf("%s: %s: post-response script: %w", where, req.Label(), err)))
+				errs = append(errs, scriptFailure(p, fmt.Errorf("%s: %s: post-response script: %w", where, req.Label(), err)))
 			}
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// scriptFailure masks a script error; a script that doesn't compile is an
+// input error (exit 2), anything else fails the request (exit 1).
+func scriptFailure(p *project, err error) error {
+	err = p.mask.Error(err)
+	var se *script.Error
+	if errors.As(err, &se) && se.Kind == script.KindSyntax {
+		return &InputError{Err: err}
+	}
+	return err
 }
 
 // scripts returns the run's script engine, creating it on first use.
@@ -188,6 +201,7 @@ func (r *Runner) project(file string) (*project, error) {
 		return p, nil
 	}
 	settings := config.Builtin()
+	var scriptTimeout time.Duration
 	if path == "" {
 		if r.opts.Env != "" {
 			logging.Log.Warn().Msgf("%s: no %s found; ignoring environment %q", file, config.FileName, r.opts.Env)
@@ -201,6 +215,7 @@ func (r *Runner) project(file string) (*project, error) {
 		if settings, err = cfg.Resolve(r.opts.Env, r.opts.LookupEnv); err != nil {
 			return nil, err
 		}
+		scriptTimeout = cfg.Scripts.Timeout.Duration
 	}
 	p := &project{
 		settings: settings,
@@ -209,7 +224,8 @@ func (r *Runner) project(file string) (*project, error) {
 			NoFollowRedirects:  !settings.FollowRedirects,
 			InsecureSkipVerify: settings.InsecureSkipVerify,
 		}),
-		mask: newMasker(settings.Secrets),
+		mask:          newMasker(settings.Secrets),
+		scriptTimeout: scriptTimeout,
 	}
 	r.projects[path] = p
 	return p, nil

@@ -36,8 +36,8 @@ Responses are printed to stdout; logs and errors go to stderr.
 | Code | Meaning |
 |------|---------|
 | `0`  | All requests succeeded |
-| `1`  | At least one request failed (e.g. connection error) |
-| `2`  | Usage or input error (unknown flag, missing file, invalid `.mon` syntax or config, unknown variable or environment) |
+| `1`  | At least one request failed (e.g. connection error, a script threw or timed out) |
+| `2`  | Usage or input error (unknown flag, missing file, invalid `.mon` syntax or config, unknown variable or environment, script syntax error) |
 
 Parse errors are reported as `file:line: message`.
 
@@ -63,8 +63,13 @@ send → print response → post-response script.
 | `console.log/info/warn/error` (to the log, secrets masked) | ✓ | ✓ |
 
 `vars.set` stores the value as a string; it is visible to every later request of the run,
-including those in later files, but `--var` still wins. A pre-request script that throws stops
-its request from being sent; a post-response script that throws fails the request (exit 1).
+including those in later files, but `--var` still wins.
+
+**Errors** point at the line in the script's own file: the `.mon` file for `{% %}` blocks, the
+`.js` file for script files, e.g. `api.mon:12:5: TypeError: Cannot read property 'id' of
+undefined`. A pre-request script that throws or times out stops its request from being sent; a
+post-response script that throws fails the request (exit 1). A script that doesn't compile is
+an input error (exit 2). Each run is limited by `scripts.timeout` (default 5s).
 
 ```
 POST {{baseUrl}}/login
@@ -105,6 +110,7 @@ envs:                       # each env merges over defaults
     vars:
       baseUrl: https://api.example.com
 scripts:
+  timeout: 5s               # per script run (default 5s)
   paths: [./lib]            # reserved for script modules (not used yet)
 load:                       # reserved for load testing (not used yet)
   vus: 50

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/dop251/goja"
 	"jmpeax.com/sec/monica/pkg/net"
@@ -21,13 +22,15 @@ type Vars interface {
 type Context struct {
 	Env  string // monica.env; "" when no environment is selected
 	Vars Vars
+	// Timeout bounds each script run; zero means DefaultTimeout.
+	Timeout time.Duration
 }
 
 // RunPre runs a pre-request script. Changes to req.method, req.url,
 // req.headers and req.body are written back to req.
 func (e *Engine) RunPre(s *request.Script, req *request.Request, ctx Context) error {
 	r := e.newReq(req, true)
-	if err := e.run(s, e.globals(ctx, r.obj, nil)); err != nil {
+	if err := e.run(s, e.globals(ctx, r.obj, nil), ctx.Timeout); err != nil {
 		return err
 	}
 	return r.writeBack(req)
@@ -35,7 +38,7 @@ func (e *Engine) RunPre(s *request.Script, req *request.Request, ctx Context) er
 
 // RunPost runs a post-response script with res set and req read-only.
 func (e *Engine) RunPost(s *request.Script, req *request.Request, res *net.HTTPResponse, ctx Context) error {
-	return e.run(s, e.globals(ctx, e.newReq(req, false).obj, e.newRes(res)))
+	return e.run(s, e.globals(ctx, e.newReq(req, false).obj, e.newRes(res)), ctx.Timeout)
 }
 
 func (e *Engine) globals(ctx Context, req, res *goja.Object) map[string]any {
@@ -154,7 +157,11 @@ func (e *Engine) newRes(res *net.HTTPResponse) *goja.Object {
 		parse, _ := goja.AssertFunction(e.rt.Get("JSON").ToObject(e.rt).Get("parse"))
 		v, err := parse(goja.Undefined(), e.rt.ToValue(res.Body))
 		if err != nil {
-			e.throw("res.json(): body is not valid JSON: %v", err)
+			reason := err.Error()
+			if ex, ok := err.(*goja.Exception); ok {
+				reason = ex.Value().String() // without the native stack
+			}
+			e.throw("res.json(): body is not valid JSON (%s)", reason)
 		}
 		return v
 	})
