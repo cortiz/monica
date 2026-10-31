@@ -32,11 +32,14 @@ Parse errors are reported as `file:line: message`.
 ```
 # Comment
 # @name requestName
+< {% /* pre-request script */ %}
 METHOD URL [HTTP/x.y]
 Header-Name: value
 Header-Name: another value
 
 BODY
+
+> {% /* post-response script */ %}
 
 ### Optional title
 METHOD URL
@@ -74,6 +77,17 @@ a failing request does not stop the ones after it.
   Sections with no request line (only comments or blank lines) are ignored.
   A body that ends at a separator loses its trailing blank lines; the body of the last request
   in the file is kept verbatim.
+* **Scripts** — JavaScript attached to a request. *Scripts are parsed but not run yet* (the
+  script engine is a later milestone); `monica run` warns when a request has one.
+  * **Pre-request** — `< {% ... %}` before the request line (with comments and directives, in
+    any order).
+  * **Post-response** — `> {% ... %}` after the headers or after the body. It ends the body
+    (trailing blank lines dropped); after it, only comments and blank lines may follow until
+    the next `###`. A body line starting with `>` that is not `> {%` is ordinary body text.
+  * A block may be one line (`< {% code %}`) or span lines up to the first `%}`; inside a block
+    every line is code, including lines starting with `#` or `###`. Nothing but spaces may
+    follow `%}`, and `%}` cannot appear inside the code. At most one script of each kind per
+    request.
 * Both `\n` and `\r\n` line endings are accepted.
 
 #### Example
@@ -116,4 +130,20 @@ POST http://example.com/users
 Content-Type: application/json
 
 < ./payloads/user.json
+```
+
+```
+### Login
+# @name login
+< {%
+  vars.set("ts", Date.now());
+%}
+POST http://example.com/login
+Content-Type: application/json
+
+{"user": "ada"}
+
+> {%
+  test("logged in", () => expect(res.status).toBe(200));
+%}
 ```

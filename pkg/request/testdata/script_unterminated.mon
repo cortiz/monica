@@ -1,0 +1,6 @@
+GET http://example.com/
+
+> {%
+  test("x", () => {});
+###
+GET http://example.com/2

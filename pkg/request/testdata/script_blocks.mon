@@ -1,0 +1,25 @@
+### Login
+# @name login
+< {%
+  vars.set("ts", Date.now());
+%}
+POST http://example.com/login
+Content-Type: application/json
+
+{"user":"ada"}
+
+> {%
+  test("ok", () => expect(res.status).toBe(200));
+  vars.set("token", res.json().token);
+%}
+
+###
+< {% req.headers.set("X-Trace", "1") %}
+GET http://example.com/me
+Authorization: Bearer x
+> {% test("me", () => {}) %}
+
+###
+GET http://example.com/quote
+
+> just a quote, not a script
