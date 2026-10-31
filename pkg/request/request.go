@@ -32,6 +32,11 @@ type Request struct {
 	Body string
 	// BodyFile is the resolved path of a "< path" body, or empty.
 	BodyFile string
+	// PreScript runs before the request is sent ("< {% ... %}" before the
+	// request line); PostScript runs on the response ("> {% ... %}" after the
+	// headers or body). Either may be nil.
+	PreScript  *Script
+	PostScript *Script
 }
 
 func (r Request) String() string {

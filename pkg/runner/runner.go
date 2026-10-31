@@ -40,6 +40,9 @@ func RunSingleFile(file string, r *Opts, out io.Writer) error {
 			continue
 		}
 		logging.Log.Info().Msgf("%s: %s", where, req.Label())
+		if req.PreScript != nil || req.PostScript != nil {
+			logging.Log.Warn().Msgf("%s: scripts are parsed but not run yet", where)
+		}
 		res, err := net.HTTPRequest(req, r.HeaderOnly)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %s: %w", where, req.Label(), err))

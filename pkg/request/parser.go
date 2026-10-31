@@ -58,6 +58,7 @@ const (
 	stateRequestLine parseState = iota
 	stateHeaders
 	stateBody
+	stateAfterPost // after the post-response script: only comments/blank lines
 )
 
 // parser holds the state of one parse. A source is a sequence of sections
@@ -71,9 +72,13 @@ type parser struct {
 	// Current section.
 	title    string
 	meta     directives // collected before the request line
+	pre      *Script    // pre-request script, attached at the request line
+	preLine  int        // line declaring pre
 	req      *Request   // nil until the request line is seen
 	body     []string   // raw body lines, terminators included
 	bodyLine int        // line number of body[0]
+
+	script *openScript // inline script block being read, if any
 }
 
 // directives holds the "# @..." lines of a section.
@@ -99,6 +104,12 @@ func parse(file, raw string) ([]*Request, error) {
 		lineNo := i + 1
 		line := strings.TrimSuffix(strings.TrimSuffix(rawLine, "\n"), "\r")
 
+		if p.script != nil { // inside "{% ... %}" every line is code
+			if err := p.scriptText(lineNo, line); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		if strings.HasPrefix(line, "###") {
 			if err := p.endSection(true); err != nil {
 				return nil, err
@@ -109,6 +120,9 @@ func parse(file, raw string) ([]*Request, error) {
 		if err := p.line(lineNo, line, rawLine); err != nil {
 			return nil, err
 		}
+	}
+	if p.script != nil {
+		return nil, p.fail(p.script.line, "unterminated %s script (missing \"%%}\")", p.script.kind)
 	}
 	if err := p.endSection(false); err != nil {
 		return nil, err
@@ -126,6 +140,10 @@ func (p *parser) fail(line int, format string, args ...any) error {
 // line handles one non-separator line of the current section.
 func (p *parser) line(lineNo int, line, rawLine string) error {
 	if p.state == stateBody {
+		if rest, ok := postScriptLine(line); ok {
+			p.state = stateAfterPost
+			return p.startScript(postScript, lineNo, rest)
+		}
 		if len(p.body) == 0 {
 			p.bodyLine = lineNo
 		}
@@ -147,6 +165,9 @@ func (p *parser) line(lineNo int, line, rawLine string) error {
 		if strings.TrimSpace(line) == "" {
 			return nil
 		}
+		if rest, ok := scriptMarker(line, '<'); ok {
+			return p.startScript(preScript, lineNo, rest)
+		}
 		req := &Request{
 			File:       p.file,
 			Line:       lineNo,
@@ -155,6 +176,7 @@ func (p *parser) line(lineNo int, line, rawLine string) error {
 			Timeout:    p.meta.timeout,
 			Skip:       p.meta.skip,
 			SkipReason: p.meta.skipReason,
+			PreScript:  p.pre,
 			Headers:    make(http.Header),
 		}
 		if err := parseRequestLine(line, req); err != nil {
@@ -167,23 +189,38 @@ func (p *parser) line(lineNo int, line, rawLine string) error {
 			p.state = stateBody
 			return nil
 		}
+		if rest, ok := postScriptLine(line); ok {
+			p.state = stateAfterPost
+			return p.startScript(postScript, lineNo, rest)
+		}
 		if err := parseHeader(line, p.req.Headers); err != nil {
 			return p.fail(lineNo, "%v", err)
 		}
+	case stateAfterPost:
+		if strings.TrimSpace(line) == "" {
+			return nil
+		}
+		if rest, ok := postScriptLine(line); ok {
+			return p.startScript(postScript, lineNo, rest) // reports the duplicate
+		}
+		return p.fail(lineNo, "unexpected text after the post-response script (start a new request with ###)")
 	}
 	return nil
 }
 
-// endSection finishes the current section. A body cut off by a separator
-// loses its trailing blank lines (the newline ending its last line is kept);
-// a body that runs to EOF is kept verbatim.
+// endSection finishes the current section. A body cut off by a separator or
+// a post-response script loses its trailing blank lines (the newline ending
+// its last line is kept); a body that runs to EOF is kept verbatim.
 func (p *parser) endSection(bySeparator bool) error {
 	if p.req == nil && p.meta.seen != nil {
 		return p.fail(p.meta.firstLine, "directives without a request")
 	}
+	if p.req == nil && p.pre != nil {
+		return p.fail(p.preLine, "pre-request script without a request")
+	}
 	if p.req != nil {
 		body := p.body
-		if bySeparator {
+		if bySeparator || p.req.PostScript != nil {
 			body = trimTrailingBlank(body)
 		}
 		p.req.Body = strings.Join(body, "")
@@ -194,7 +231,7 @@ func (p *parser) endSection(bySeparator bool) error {
 		}
 		p.reqs = append(p.reqs, p.req)
 	}
-	p.state, p.title, p.meta = stateRequestLine, "", directives{}
+	p.state, p.title, p.meta, p.pre, p.preLine = stateRequestLine, "", directives{}, nil, 0
 	p.req, p.body, p.bodyLine = nil, nil, 0
 	return nil
 }
