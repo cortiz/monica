@@ -1,6 +1,7 @@
 package net
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -22,12 +23,14 @@ const (
 // Client sends parsed requests. It wraps one *http.Client so connections are
 // reused across requests.
 type Client struct {
-	http *http.Client
+	http    *http.Client
+	timeout time.Duration
 }
 
-// NewClient returns a Client whose requests time out after timeout.
+// NewClient returns a Client whose requests time out after timeout (zero
+// means no timeout). A request's own Timeout overrides it.
 func NewClient(timeout time.Duration) *Client {
-	return &Client{http: &http.Client{Timeout: timeout}}
+	return &Client{http: &http.Client{}, timeout: timeout}
 }
 
 var defaultClient = NewClient(DefaultTimeout)
@@ -43,7 +46,17 @@ func (c *Client) Do(request *request.Request, headerOnly bool) (*HTTPResponse, e
 	if request == nil {
 		return nil, errors.New("nil request")
 	}
-	req, err := http.NewRequest(request.Method, request.URL, strings.NewReader(request.Body))
+	timeout := c.timeout
+	if request.Timeout > 0 {
+		timeout = request.Timeout
+	}
+	ctx := context.Background()
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel() // after the body has been read
+	}
+	req, err := http.NewRequestWithContext(ctx, request.Method, request.URL, strings.NewReader(request.Body))
 	if err != nil {
 		return nil, fmt.Errorf("creating HTTP request: %w", err)
 	}
@@ -63,6 +76,9 @@ func (c *Client) Do(request *request.Request, headerOnly bool) (*HTTPResponse, e
 
 	start := time.Now()
 	resp, err := c.http.Do(req)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return nil, fmt.Errorf("sending HTTP request: timed out after %s: %w", timeout, err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("sending HTTP request: %w", err)
 	}
@@ -78,6 +94,9 @@ func (c *Client) Do(request *request.Request, headerOnly bool) (*HTTPResponse, e
 	}
 	if !headerOnly {
 		bodyBytes, err := io.ReadAll(resp.Body)
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("reading response body: timed out after %s: %w", timeout, err)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("reading response body: %w", err)
 		}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"jmpeax.com/sec/monica/internal/logging"
 )
@@ -61,11 +62,23 @@ type parser struct {
 	file  string
 	state parseState
 	reqs  []*Request
+	names map[string]int // request name -> line of its @name
 
 	// Current section.
 	title string
-	req   *Request // nil until the request line is seen
-	body  []string // raw body lines, terminators included
+	meta  directives // collected before the request line
+	req   *Request   // nil until the request line is seen
+	body  []string   // raw body lines, terminators included
+}
+
+// directives holds the "# @..." lines of a section.
+type directives struct {
+	seen       map[string]int // directive -> line, to reject repeats
+	firstLine  int
+	name       string
+	timeout    time.Duration
+	skip       bool
+	skipReason string
 }
 
 // parse reads each section in turn: comments/blank lines, the request line,
@@ -73,7 +86,7 @@ type parser struct {
 // verbatim up to the next separator or EOF.
 func parse(file, raw string) ([]*Request, error) {
 	logging.Log.Debug().Msg("Parsing request")
-	p := &parser{file: file}
+	p := &parser{file: file, names: map[string]int{}}
 	for i, rawLine := range strings.SplitAfter(raw, "\n") {
 		if rawLine == "" {
 			continue // after a trailing "\n"
@@ -82,7 +95,9 @@ func parse(file, raw string) ([]*Request, error) {
 		line := strings.TrimSuffix(strings.TrimSuffix(rawLine, "\n"), "\r")
 
 		if strings.HasPrefix(line, "###") {
-			p.endSection(true)
+			if err := p.endSection(true); err != nil {
+				return nil, err
+			}
 			p.title = strings.TrimSpace(strings.TrimLeft(line, "#"))
 			continue
 		}
@@ -90,7 +105,9 @@ func parse(file, raw string) ([]*Request, error) {
 			return nil, err
 		}
 	}
-	p.endSection(false)
+	if err := p.endSection(false); err != nil {
+		return nil, err
+	}
 	if len(p.reqs) == 0 {
 		return nil, p.fail(0, "missing request line (expected \"METHOD URL [HTTP/x.y]\")")
 	}
@@ -107,6 +124,12 @@ func (p *parser) line(lineNo int, line, rawLine string) error {
 		p.body = append(p.body, rawLine)
 		return nil
 	}
+	if text, ok := directiveText(line); ok {
+		if p.state != stateRequestLine {
+			return p.fail(lineNo, "directive %q must come before the request line", line)
+		}
+		return p.directive(lineNo, text)
+	}
 	if strings.HasPrefix(line, "#") {
 		logging.Log.Trace().Msgf("Skipping comment: %s", line)
 		return nil
@@ -116,7 +139,16 @@ func (p *parser) line(lineNo int, line, rawLine string) error {
 		if strings.TrimSpace(line) == "" {
 			return nil
 		}
-		req := &Request{File: p.file, Line: lineNo, Title: p.title, Headers: make(http.Header)}
+		req := &Request{
+			File:       p.file,
+			Line:       lineNo,
+			Title:      p.title,
+			Name:       p.meta.name,
+			Timeout:    p.meta.timeout,
+			Skip:       p.meta.skip,
+			SkipReason: p.meta.skipReason,
+			Headers:    make(http.Header),
+		}
 		if err := parseRequestLine(line, req); err != nil {
 			return p.fail(lineNo, "%v", err)
 		}
@@ -137,7 +169,10 @@ func (p *parser) line(lineNo int, line, rawLine string) error {
 // endSection finishes the current section. A body cut off by a separator
 // loses its trailing blank lines (the newline ending its last line is kept);
 // a body that runs to EOF is kept verbatim.
-func (p *parser) endSection(bySeparator bool) {
+func (p *parser) endSection(bySeparator bool) error {
+	if p.req == nil && p.meta.seen != nil {
+		return p.fail(p.meta.firstLine, "directives without a request")
+	}
 	if p.req != nil {
 		body := p.body
 		if bySeparator {
@@ -146,7 +181,61 @@ func (p *parser) endSection(bySeparator bool) {
 		p.req.Body = strings.Join(body, "")
 		p.reqs = append(p.reqs, p.req)
 	}
-	p.state, p.title, p.req, p.body = stateRequestLine, "", nil, nil
+	p.state, p.title, p.meta, p.req, p.body = stateRequestLine, "", directives{}, nil, nil
+	return nil
+}
+
+// directiveText reports whether line is a "# @directive" line and returns
+// the text after the "@".
+func directiveText(line string) (string, bool) {
+	rest, ok := strings.CutPrefix(line, "#")
+	if !ok {
+		return "", false
+	}
+	return strings.CutPrefix(strings.TrimLeft(rest, " \t"), "@")
+}
+
+// nameRe matches a request name: usable later as an identifier in scripts.
+var nameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*$`)
+
+// directive parses one "@key [value]" directive into the section metadata.
+func (p *parser) directive(lineNo int, text string) error {
+	key, value := strings.TrimSpace(text), ""
+	if i := strings.IndexAny(key, " \t"); i >= 0 {
+		key, value = key[:i], strings.TrimSpace(key[i:])
+	}
+	m := &p.meta
+	if prev, dup := m.seen["@"+key]; dup {
+		return p.fail(lineNo, "duplicate @%s (first at line %d)", key, prev)
+	}
+	switch key {
+	case "name":
+		if !nameRe.MatchString(value) {
+			return p.fail(lineNo, "invalid @name %q (expected letters, digits, '_', '-', '.', not starting with a digit)", value)
+		}
+		if prev, dup := p.names[value]; dup {
+			return p.fail(lineNo, "duplicate request name %q (first at line %d)", value, prev)
+		}
+		p.names[value] = lineNo
+		m.name = value
+	case "timeout":
+		d, err := time.ParseDuration(value)
+		if err != nil || d <= 0 {
+			return p.fail(lineNo, "invalid @timeout %q (expected a positive duration such as 5s or 500ms)", value)
+		}
+		m.timeout = d
+	case "skip":
+		m.skip, m.skipReason = true, value
+	case "":
+		return p.fail(lineNo, "empty directive")
+	default:
+		return p.fail(lineNo, "unknown directive @%s (known: @name, @timeout, @skip)", key)
+	}
+	if m.seen == nil {
+		m.seen, m.firstLine = map[string]int{}, lineNo
+	}
+	m.seen["@"+key] = lineNo
+	return nil
 }
 
 func trimTrailingBlank(lines []string) []string {

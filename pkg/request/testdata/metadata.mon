@@ -1,0 +1,17 @@
+### Login
+# @name login
+# @timeout 5s
+POST http://example.com/login
+Content-Type: application/json
+
+{"user":"ada"}
+
+###
+#@skip  flaky upstream
+# regular comment
+GET http://example.com/flaky
+
+###
+# @name list-users.v2
+# @skip
+GET http://example.com/users
