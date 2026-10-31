@@ -1,0 +1,4 @@
+# Request line without URL
+
+GET
+Host: example.com
