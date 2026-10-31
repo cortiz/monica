@@ -28,6 +28,8 @@ type Config struct {
 
 	// Path is the file the config was read from.
 	Path string `yaml:"-"`
+	// DotEnv holds the .env file next to Path, if any.
+	DotEnv map[string]string `yaml:"-"`
 }
 
 // Settings are the request settings shared by defaults and environments.
@@ -71,7 +73,9 @@ func (d *Duration) UnmarshalYAML(n *yaml.Node) error {
 	return nil
 }
 
-// Load reads and validates the config file at path.
+// Load reads and validates the config file at path, deep-merges
+// monica.local.yml from the same directory over it and reads .env from there
+// (both optional).
 func Load(path string) (*Config, error) {
 	c, err := decodeFile(path)
 	if err != nil {
@@ -79,6 +83,9 @@ func Load(path string) (*Config, error) {
 	}
 	if err := c.validate(true); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if err := c.loadSiblings(); err != nil {
+		return nil, err
 	}
 	return c, nil
 }
