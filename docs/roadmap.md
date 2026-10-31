@@ -81,7 +81,7 @@ with source location for error messages.
 
 ---
 
-## Phase 2 — Configuration & variables (`monica.yml`)
+## Phase 2 — Configuration & variables (`monica.yml`) ✅ done
 
 Uses `gopkg.in/yaml.v3` (already an indirect dep → promote to direct).
 
@@ -305,7 +305,7 @@ so each source only implements parsing.
 
 | Dependency | Phase | Status |
 |------------|-------|--------|
-| `gopkg.in/yaml.v3` | 2 | already indirect → promote |
+| `gopkg.in/yaml.v3` | 2 | ✅ direct |
 | `github.com/dop251/goja` | 3 | 🔒 needs approval |
 | `github.com/dop251/goja_nodejs` | 5 | 🔒 needs approval |
 | `github.com/evanw/esbuild` | 5.5 | 🔒 optional |
@@ -315,7 +315,7 @@ Postman and Bruno import need no new dependencies (stdlib JSON + hand-written `.
 
 ## Suggested order
 
-`0.x → 1.x` (done) `→ 2.1 → 2.2 → 2.3 → 2.4 → 2.5 → 3.x → 4.x → 5.x → 6.x → 7.x → 8.x`
+`0.x → 1.x → 2.x` (done) `→ 3.x → 4.x → 5.x → 6.x → 7.x → 8.x`
 
 1.3 landed before Phase 2 as parse-only; revisit the script syntax in 3.x if the engine
 needs changes (e.g. `%}` inside code).
