@@ -5,6 +5,7 @@ package report
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"jmpeax.com/sec/monica/pkg/script"
@@ -15,7 +16,10 @@ type Request struct {
 	File string `json:"file"`
 	Line int    `json:"line"`
 	// Name is the request's label: @name, else ### title, else "METHOD URL".
-	Name       string        `json:"name"`
+	Name string `json:"name"`
+	// Iteration is the 1-based --data row the request ran for; 0 without
+	// --data.
+	Iteration  int           `json:"iteration,omitempty"`
 	Method     string        `json:"method"`
 	URL        string        `json:"url"` // as sent, once expanded
 	Status     int           `json:"status,omitempty"`
@@ -29,6 +33,14 @@ type Request struct {
 	Tests []script.TestResult `json:"tests,omitempty"`
 	// Response is the printable response (status line, headers, body).
 	Response string `json:"-"`
+}
+
+// rowSuffix is " [row N]" for a --data iteration, else "".
+func (r Request) rowSuffix() string {
+	if r.Iteration == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" [row %d]", r.Iteration)
 }
 
 // Failed reports whether the request errored or has a failed test.

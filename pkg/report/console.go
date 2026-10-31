@@ -33,6 +33,9 @@ const (
 //	        expected 612 to be less than 500
 func (c *Console) Request(r Request) {
 	where := fmt.Sprintf("(%s:%d)", r.File, r.Line)
+	if r.Iteration > 0 {
+		where = fmt.Sprintf("(%s:%d, row %d)", r.File, r.Line, r.Iteration)
+	}
 	if r.Skipped {
 		line := fmt.Sprintf("%s %s  skipped", markSkip, r.Name)
 		if r.SkipReason != "" {

@@ -139,5 +139,5 @@ func (r *Runner) hookFailure(h *hookFile, stage string, err error) error {
 }
 
 func (r *Runner) hookContext(p *project) script.Context {
-	return script.Context{Env: p.settings.Env, Vars: &runVars{r: r, s: p.settings}, Timeout: p.scriptTimeout}
+	return script.Context{Env: p.settings.Env, Iteration: r.iteration, Vars: &runVars{r: r, s: p.settings}, Timeout: p.scriptTimeout}
 }

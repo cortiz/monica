@@ -1,0 +1,4 @@
+[
+  {"user": "ada", "id": 7, "admin": true, "tags": ["a", "b"], "note": null},
+  {"user": "bob", "id": 1.5e3, "admin": false, "tags": {"x": 1}, "note": "hi"}
+]
