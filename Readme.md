@@ -16,6 +16,12 @@ Monica is designed to handle Network requests and responses.
 	```bash
 	monica run -s <file>
 	```
+* Run only some requests, stop at the first failure, without response bodies
+	```bash
+	monica run --filter 'login' --filter 'users-*' --bail -q
+	```
+	Requests skipped by `--filter` don't run their scripts either, so variables they would set
+	(`vars.set`) are not available to later requests.
 
 * Pick an environment, override variables, or use a specific config file
 	```bash
@@ -31,6 +37,9 @@ Monica is designed to handle Network requests and responses.
 | `-c, --config <file>` | Use this config instead of the nearest `monica.yml` |
 | `--reporter <format>` | `console` (default), `json` or `junit` |
 | `-o, --out <file>` | Write the report to a file |
+| `--bail` | Stop at the first failed request (later requests and files are not run) |
+| `--filter <glob>` | Only run requests whose `@name`, `###` title or `METHOD URL` matches; `*` matches any text, `?` one character; repeatable |
+| `-q, --quiet` | Hide response headers and bodies in the console report |
 
 The report goes to stdout; logs and errors go to stderr. For each request it prints a status
 line, the response, and ✓/✗ per test (with the failure message), then a summary:

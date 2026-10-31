@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -41,6 +42,8 @@ type Runner struct {
 	runtime  map[string]string   // vars.set values
 	engine   *script.Engine      // created on first script
 	mask     masker              // of the request being run, for console output
+	bailed   bool                // --bail tripped: run nothing more
+	filters  []*regexp.Regexp    // compiled Opts.Filters
 }
 
 // project is a resolved config and what is built from it.
@@ -60,7 +63,11 @@ func New(opts *Opts, out io.Writer) *Runner {
 
 // NewWithReporter returns a Runner sending results to rep.
 func NewWithReporter(opts *Opts, rep report.Reporter) *Runner {
-	return &Runner{opts: opts, rep: rep, start: time.Now(), projects: map[string]*project{}, runtime: map[string]string{}}
+	r := &Runner{opts: opts, rep: rep, start: time.Now(), projects: map[string]*project{}, runtime: map[string]string{}}
+	for _, glob := range opts.Filters {
+		r.filters = append(r.filters, globRe(glob))
+	}
+	return r
 }
 
 // RunSingleFile runs one file with a fresh Runner and finishes the report.
@@ -81,6 +88,38 @@ func (r *Runner) Finish() error {
 func (r *Runner) emit(res report.Request) {
 	r.results = append(r.results, res)
 	r.rep.Request(res)
+	if r.opts.Bail && res.Failed() && !r.bailed {
+		r.bailed = true
+		logging.Log.Warn().Msgf("%s:%d: stopping at the first failure (--bail)", res.File, res.Line)
+	}
+}
+
+// Bailed reports whether --bail stopped the run; later RunFile calls do
+// nothing.
+func (r *Runner) Bailed() bool { return r.bailed }
+
+// selected reports whether req passes the --filter globs.
+func (r *Runner) selected(req *request.Request) bool {
+	if len(r.filters) == 0 {
+		return true
+	}
+	for _, re := range r.filters {
+		for _, name := range []string{req.Name, req.Title, req.String()} {
+			if name != "" && re.MatchString(name) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// globRe compiles a glob where * matches any text (including "/") and ?
+// one character; everything else is literal.
+func globRe(glob string) *regexp.Regexp {
+	q := regexp.QuoteMeta(glob)
+	q = strings.ReplaceAll(q, `\*`, ".*")
+	q = strings.ReplaceAll(q, `\?`, ".")
+	return regexp.MustCompile("^" + q + "$")
 }
 
 // RunFile parses file and runs its requests in order (except those marked
@@ -90,6 +129,9 @@ func (r *Runner) emit(res report.Request) {
 // variables can't be expanded, or whose script doesn't compile, fails with
 // an *InputError of its own.
 func (r *Runner) RunFile(file string) error {
+	if r.bailed {
+		return nil
+	}
 	reqs, err := request.ParseMonFile(file)
 	if err != nil {
 		r.emit(fileFailure(file, err))
@@ -102,6 +144,13 @@ func (r *Runner) RunFile(file string) error {
 	}
 	var errs []error
 	for _, req := range reqs {
+		if r.bailed {
+			break
+		}
+		if !r.selected(req) {
+			logging.Log.Debug().Msgf("%s:%d: %s does not match --filter", file, req.Line, req.Label())
+			continue
+		}
 		res, err := r.runRequest(file, req, p)
 		r.emit(res)
 		if err != nil {
