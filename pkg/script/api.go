@@ -24,7 +24,10 @@ type Context struct {
 	// Iteration is monica.iteration: the 1-based --data row, 0 without
 	// --data.
 	Iteration int
-	Vars      Vars
+	// VU is monica.vu: the 1-based virtual user under monica load, 0
+	// otherwise.
+	VU   int
+	Vars Vars
 	// Timeout bounds each script run; zero means DefaultTimeout.
 	Timeout time.Duration
 }
@@ -51,6 +54,7 @@ func (e *Engine) globals(ctx Context, req, res *goja.Object) map[string]any {
 	monica := e.rt.NewObject()
 	_ = monica.Set("env", ctx.Env)
 	_ = monica.Set("iteration", ctx.Iteration)
+	_ = monica.Set("vu", ctx.VU)
 	g := map[string]any{"req": req, "vars": e.newVars(ctx.Vars), "monica": monica}
 	if res != nil {
 		g["res"] = res

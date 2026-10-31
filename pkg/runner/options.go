@@ -1,6 +1,10 @@
 package runner
 
-import "jmpeax.com/sec/monica/internal/config"
+import (
+	"context"
+
+	"jmpeax.com/sec/monica/internal/config"
+)
 
 type Opts struct {
 	HeaderOnly bool
@@ -21,4 +25,13 @@ type Opts struct {
 	// LookupEnv reads OS environment variables for ${NAME}; nil means
 	// os.LookupEnv.
 	LookupEnv config.LookupFunc
+	// Context, when set, stops the run once it is done: the request being
+	// sent is aborted and no further request starts. nil means never.
+	Context context.Context
+	// NoSummary keeps no per-request results for Finish's summary, so a long
+	// run (monica load) does not grow; the reporter still gets every result.
+	NoSummary bool
+	// VU is monica.vu in scripts: the 1-based virtual user under monica
+	// load, 0 otherwise.
+	VU int
 }

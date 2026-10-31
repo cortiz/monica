@@ -101,6 +101,48 @@ monica run --reporter junit --out monica-report.xml
 
 Parse errors are reported as `file:line: message`.
 
+## Load testing
+
+`monica load` runs the same `.mon` files with several virtual users (VUs) at once:
+
+```bash
+monica load --vus 10 --duration 30s      # 10 VUs for 30 seconds
+monica load -u 5 -i 1000 -s checkout.mon # 1000 iterations shared by 5 VUs
+```
+
+```
+monica load: 10 VUs, 30s
+iterations  1234 completed (41.1/s), 2 interrupted
+requests    2468 (82.2/s), 3 failed (0.12%)
+duration    30.02s
+```
+
+* **Iteration** — one pass over every selected file in [run order](#run-order) (`-s`, `-r`
+  and `--filter` work as for `monica run`; `-e`, `--var` and `-c` too). Each VU has its own
+  script runtime and variables, so `vars.set` values stay with that VU from one iteration to
+  the next; scripts see `monica.vu` and `monica.iteration`. Folder `beforeAll` hooks run once
+  per VU, before its first iteration, and `afterAll` when it stops.
+* **Limits** — `--duration` stops VUs from starting new iterations; iterations still running
+  get `--graceful-stop` (default 30s) to finish, then their requests are aborted and they are
+  counted as interrupted. `-i, --iterations` is a total shared by all VUs; with both, whichever
+  comes first. Defaults come from `load.vus` and `load.duration` in `monica.yml` (`--config`
+  or the nearest one above the current directory); `--iterations` alone ignores
+  `load.duration`. Without either, 1 VU runs 1 iteration.
+* **Failures** — a request fails as in `monica run` (connection error, script error, failed
+  `test()`); `@skip`ped requests are not counted. Failures don't change the exit code (`0`);
+  input errors (invalid file or config, unknown variable, an iteration with no requests left
+  after `--filter`/`@skip`) stop the test with exit code `2`, and Ctrl-C prints the summary
+  so far with exit code `1`.
+* Only warnings and errors are logged (`console.log` output too), unless `--debug`.
+
+| Flag | Meaning |
+|------|---------|
+| `-u, --vus <n>` | Virtual users running at once (default `load.vus`, else 1) |
+| `--duration <d>` | Stop starting iterations after this long, e.g. `30s` (default `load.duration`) |
+| `-i, --iterations <n>` | Total iterations, shared by all VUs |
+| `--graceful-stop <d>` | Time running iterations get at the end of `--duration` (default `30s`) |
+| `-s`, `-r`, `-e`, `--var`, `-c`, `--filter` | As for `monica run` |
+
 ## Scripting
 
 Scripts are JavaScript (ES5.1 plus most of ES2015+, via [goja](https://github.com/dop251/goja))
@@ -141,7 +183,8 @@ GET {{baseUrl}}/jobs/{{jobId}}
 | `res.json()` (throws on invalid JSON) | – | ✓ |
 | `vars.get(n)` (`undefined` if unset) / `vars.has(n)` / `vars.set(n, v)` | ✓ | ✓ |
 | `monica.env` (selected environment or `""`) | ✓ | ✓ |
-| `monica.iteration` (`--data` row, 1-based; `0` without `--data`) | ✓ | ✓ |
+| `monica.iteration` (`--data` row, 1-based; under `monica load`, the VU's iteration; else `0`) | ✓ | ✓ |
+| `monica.vu` (virtual user under `monica load`, 1-based; else `0`) | ✓ | ✓ |
 | `console.log/info/warn/error` (to the log, secrets masked) | ✓ | ✓ |
 | `test(name, fn)`, `expect(value)` | ✓ | ✓ |
 | `require(path)`, `import` statements ([Modules](#modules)) | ✓ | ✓ |
@@ -351,10 +394,10 @@ scripts:
   timeout: 5s               # per script run (default 5s)
   paths: [./lib]            # folders for require("name"), inside monica.yml's folder
 order: [auth/login.mon, users]  # run these first (see Run order)
-load:                       # reserved for load testing (not used yet)
+load:                       # defaults for monica load
   vus: 50
   duration: 30s
-  thresholds: ["p95<300ms", "errors<1%"]
+  thresholds: ["p95<300ms", "errors<1%"]   # reserved (not used yet)
 ```
 
 * Unknown keys, a missing or unsupported `version` and invalid durations are errors that name
