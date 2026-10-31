@@ -117,10 +117,10 @@ func (m metrics) stats() ([]Stat, Stat) {
 //	login    1234  0       41.1  12ms   ...
 func writeTable(b *strings.Builder, stats []Stat, total Stat, d time.Duration) {
 	tw := tabwriter.NewWriter(b, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "request\treqs\tfailed\trps\tmin\tavg\tp50\tp90\tp95\tp99\tmax")
+	_, _ = fmt.Fprintln(tw, "request\treqs\tfailed\trps\tmin\tavg\tp50\tp90\tp95\tp99\tmax")
 	row := func(s Stat) {
 		h := &s.Duration
-		fmt.Fprintf(tw, "%s\t%d\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", s.Name, s.Requests, s.Failed, rate(int64(s.Requests), d),
+		_, _ = fmt.Fprintf(tw, "%s\t%d\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", s.Name, s.Requests, s.Failed, rate(int64(s.Requests), d),
 			fmtDur(h.Min()), fmtDur(h.Mean()), fmtDur(h.Quantile(0.5)), fmtDur(h.Quantile(0.9)),
 			fmtDur(h.Quantile(0.95)), fmtDur(h.Quantile(0.99)), fmtDur(h.Max()))
 	}
