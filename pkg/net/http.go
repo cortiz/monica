@@ -6,12 +6,40 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"jmpeax.com/sec/monica/internal/logging"
 	"jmpeax.com/sec/monica/pkg/request"
 )
 
+const (
+	// DefaultTimeout bounds a whole request, including reading the body.
+	DefaultTimeout = 30 * time.Second
+	// DefaultUserAgent is sent when the request sets no User-Agent.
+	DefaultUserAgent = "monica/0.1.0"
+)
+
+// Client sends parsed requests. It wraps one *http.Client so connections are
+// reused across requests.
+type Client struct {
+	http *http.Client
+}
+
+// NewClient returns a Client whose requests time out after timeout.
+func NewClient(timeout time.Duration) *Client {
+	return &Client{http: &http.Client{Timeout: timeout}}
+}
+
+var defaultClient = NewClient(DefaultTimeout)
+
+// HTTPRequest sends request with the shared default client.
 func HTTPRequest(request *request.Request, headerOnly bool) (*HTTPResponse, error) {
+	return defaultClient.Do(request, headerOnly)
+}
+
+// Do sends request and returns its response. With headerOnly the body is
+// discarded.
+func (c *Client) Do(request *request.Request, headerOnly bool) (*HTTPResponse, error) {
 	if request == nil {
 		return nil, errors.New("nil request")
 	}
@@ -24,41 +52,38 @@ func HTTPRequest(request *request.Request, headerOnly bool) (*HTTPResponse, erro
 			req.Header.Add(k, v)
 		}
 	}
-	req.Header.Add("User-Agent", "Monica/0.1.0")
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	// net/http ignores Header["Host"]; the Host field is what is sent.
+	if host := request.Headers.Get("Host"); host != "" {
+		req.Host = host
+		req.Header.Del("Host")
+	}
+	if req.Header.Get("User-Agent") == "" {
+		req.Header.Set("User-Agent", DefaultUserAgent)
+	}
+
+	start := time.Now()
+	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("sending HTTP request: %w", err)
 	}
-	return parseHTTPResponse(resp, headerOnly)
-}
-
-func parseHTTPResponse(resp *http.Response, headerOnly bool) (*HTTPResponse, error) {
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			logging.Log.Debug().Err(err).Msg("Failed to close response body")
+		}
+	}()
 	response := &HTTPResponse{
 		Status:     resp.Proto + " " + resp.Status,
 		StatusCode: resp.StatusCode,
-		Headers:    parseResponseHeaders(resp.Header),
+		Headers:    resp.Header,
 	}
 	if !headerOnly {
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logging.Log.Error().Err(err).Msg("Failed to close response body")
-			}
-		}(resp.Body)
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return nil, fmt.Errorf("reading response body: %w", err)
 		}
 		response.Body = string(bodyBytes)
 	}
+	response.Duration = time.Since(start)
+	logging.Log.Debug().Msgf("%s %s -> %d in %s", request.Method, request.URL, resp.StatusCode, response.Duration)
 	return response, nil
-}
-
-func parseResponseHeaders(headers http.Header) map[string]string {
-	responseHeaders := make(map[string]string)
-	for k, v := range headers {
-		responseHeaders[k] = strings.Join(v, ",")
-	}
-	return responseHeaders
 }
