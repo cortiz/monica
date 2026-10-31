@@ -10,7 +10,7 @@ Legend: **S** < half a day · **M** ~1 day · **L** 2–3 days · 🔒 needs dep
 
 ---
 
-## Phase 0 — Foundations (fix what exists)
+## Phase 0 — Foundations (fix what exists) ✅ done
 
 The current code has bugs that every later phase builds on. Fix them first.
 
@@ -49,7 +49,7 @@ The current code has bugs that every later phase builds on. Fix them first.
 
 ---
 
-## Phase 1 — `.mon` format v2
+## Phase 1 — `.mon` format v2 ✅ done
 
 | ID | Task | Size |
 |----|------|------|
@@ -315,9 +315,10 @@ Postman and Bruno import need no new dependencies (stdlib JSON + hand-written `.
 
 ## Suggested order
 
-`0.1 → 0.2 → 0.3 → 0.4 → 1.1 → 1.2 → 2.1 → 2.2 → 2.3 → 2.4 → 2.5 → 1.3 → 3.x → 4.x → 5.x → 6.x → 7.x → 8.x`
+`0.x → 1.x` (done) `→ 2.1 → 2.2 → 2.3 → 2.4 → 2.5 → 3.x → 4.x → 5.x → 6.x → 7.x → 8.x`
 
-(1.3 is parked until right before Phase 3 so the script syntax is designed with the engine in hand.)
+1.3 landed before Phase 2 as parse-only; revisit the script syntax in 3.x if the engine
+needs changes (e.g. `%}` inside code).
 
 Phase 9 tracks (TUI, Postman import, Bruno import) have no fixed order — slot each in
 whenever its prerequisites are met. Basic request import (no scripts) is possible right after Phase 2.
