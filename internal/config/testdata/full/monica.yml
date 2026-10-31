@@ -1,0 +1,25 @@
+version: 1
+defaults:
+  timeout: 30s
+  followRedirects: true
+  insecureSkipVerify: false
+  headers:
+    User-Agent: monica/0.2.0
+  vars:
+    apiVersion: v2
+    port: 8080
+envs:
+  dev:
+    vars:
+      baseUrl: http://localhost:8080
+      pass: ${DEV_PASSWORD}
+  prod:
+    timeout: 10s
+    vars:
+      baseUrl: https://api.example.com
+scripts:
+  paths: [./lib]
+load:
+  vus: 50
+  duration: 30s
+  thresholds: ["p95<300ms", "errors<1%"]
