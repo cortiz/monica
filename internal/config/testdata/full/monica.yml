@@ -24,3 +24,4 @@ load:
   vus: 50
   duration: 30s
   thresholds: ["p95<300ms", "errors<1%"]
+order: [auth/login.mon, users]

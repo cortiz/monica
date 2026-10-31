@@ -186,6 +186,9 @@ func (c *Config) mergeLocal(local *Config) {
 	if local.Scripts.Paths != nil {
 		c.Scripts.Paths = local.Scripts.Paths
 	}
+	if local.Order != nil {
+		c.Order = local.Order
+	}
 	if local.Load.VUs != 0 {
 		c.Load.VUs = local.Load.VUs
 	}

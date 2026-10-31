@@ -218,3 +218,16 @@ func TestParseDotEnv(t *testing.T) {
 		t.Fatalf("got  %v\nwant %v", got, want)
 	}
 }
+
+func TestLocalOverridesOrder(t *testing.T) {
+	dir := t.TempDir()
+	path := writeFile(t, dir, FileName, "version: 1\norder: [a.mon, b.mon]\n")
+	writeFile(t, dir, LocalFileName, "order: [b.mon]\n")
+	c, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"b.mon"}; !reflect.DeepEqual(c.Order, want) {
+		t.Fatalf("Order = %v, want %v", c.Order, want)
+	}
+}
