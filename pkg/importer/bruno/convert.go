@@ -541,7 +541,6 @@ func (cv *converter) body(r *importer.Request, f *File, mode, src, file string) 
 		r.Headers = append(hs, importer.Header{Name: "Content-Type", Value: "multipart/form-data; boundary=" + FormBoundary})
 		r.Body = sb.String()
 	case "graphql":
-		q, _ := json.Marshal(f.Block("body:graphql").textOr(""))
 		vars := strings.TrimSpace(f.Block("body:graphql:vars").textOr(""))
 		if vars == "" || !json.Valid([]byte(vars)) {
 			if vars != "" {
@@ -549,7 +548,7 @@ func (cv *converter) body(r *importer.Request, f *File, mode, src, file string) 
 			}
 			vars = "{}"
 		}
-		r.Body = cv.text(`{"query":`+string(q)+`,"variables":`+vars+"}", src)
+		r.Body = cv.text(importer.GraphQLBody(f.Block("body:graphql").textOr(""), vars), src)
 		contentType("application/json")
 	default:
 		cv.p.Addf("%s: %s body mode is not supported", src, mode)
@@ -887,7 +886,4 @@ func (cv *converter) envs() error {
 	return nil
 }
 
-func jsString(s string) string {
-	b, _ := json.Marshal(s)
-	return string(b)
-}
+func jsString(s string) string { return importer.JSString(s) }
