@@ -58,6 +58,7 @@ func Convert(c *Collection, envs []*Environment) *importer.Project {
 	}
 	if cv.usesShim {
 		cv.p.Extra[shimPath] = shimJS
+		cv.p.Extra[importer.ChaiPath] = importer.ChaiJS
 		cv.p.Config.Scripts = &importer.ConfigScripts{Paths: []string{"./lib"}}
 	}
 	return cv.p
@@ -249,22 +250,14 @@ func hasDisabled(kvs []KV) bool {
 	return false
 }
 
-var dynamicRe = regexp.MustCompile(`{{\s*\$([A-Za-z]+)\s*}}`)
-
 // text maps Postman's dynamic variables to monica built-ins and reports
 // the ones monica lacks.
 func (cv *converter) text(s, file string) string {
-	return dynamicRe.ReplaceAllStringFunc(s, func(m string) string {
-		name := dynamicRe.FindStringSubmatch(m)[1]
-		switch name {
-		case "guid", "randomUUID":
-			return "{{$uuid}}"
-		case "timestamp", "randomInt":
-			return "{{$" + name + "}}"
-		}
+	out, unknown := importer.DynamicVars(s)
+	for _, name := range unknown {
 		cv.p.Addf("%s: dynamic variable {{$%s}} has no monica equivalent (only $uuid, $timestamp, $randomInt); set it in a pre-request script", file, name)
-		return m
-	})
+	}
+	return out
 }
 
 // auth adds the request's auth header or query parameter; it returns
@@ -546,7 +539,7 @@ func (cv *converter) hooks(events []Event, where string) string {
 // secret values become ${NAME} placeholders.
 func (cv *converter) vars(c *Collection, envs []*Environment) {
 	secret := func(where, key string) string {
-		name := envName(key)
+		name := importer.EnvName(key)
 		cv.secrets = append(cv.secrets, name)
 		cv.p.Addf("%s: secret %q was not written; set %s in the OS environment or .env (see .env.example; monica.yml reads ${%s})", where, key, name, name)
 		return "${" + name + "}"
@@ -594,38 +587,6 @@ func (cv *converter) vars(c *Collection, envs []*Environment) {
 func hasEnv(envs map[string]importer.Settings, name string) bool {
 	_, ok := envs[name]
 	return ok
-}
-
-// envName makes an OS environment variable name: API_KEY for "apiKey".
-func envName(key string) string {
-	var b strings.Builder
-	prevLower := false
-	for _, r := range key {
-		switch {
-		case r >= 'a' && r <= 'z':
-			b.WriteRune(r - 'a' + 'A')
-			prevLower = true
-		case r >= 'A' && r <= 'Z':
-			if prevLower {
-				b.WriteByte('_')
-			}
-			b.WriteRune(r)
-			prevLower = false
-		case r >= '0' && r <= '9':
-			b.WriteRune(r)
-			prevLower = true
-		default:
-			if b.Len() > 0 && !strings.HasSuffix(b.String(), "_") {
-				b.WriteByte('_')
-			}
-			prevLower = false
-		}
-	}
-	s := strings.Trim(b.String(), "_")
-	if s == "" || (s[0] >= '0' && s[0] <= '9') {
-		s = "V_" + s
-	}
-	return s
 }
 
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }

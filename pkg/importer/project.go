@@ -2,11 +2,13 @@ package importer
 
 import (
 	"bytes"
+	_ "embed"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -197,6 +199,68 @@ func Identifier(name string) string {
 	}
 	if s[0] >= 'A' && s[0] <= 'Z' {
 		s = strings.ToLower(s[:1]) + s[1:]
+	}
+	return s
+}
+
+// ChaiJS is the shared Chai-style assertion module the import shims
+// require as "./monica-chai" from lib/.
+//
+//go:embed chai.js
+var ChaiJS string
+
+// ChaiPath is where ChaiJS goes in an imported project.
+const ChaiPath = "lib/monica-chai.js"
+
+var dynamicRe = regexp.MustCompile(`{{\s*\$([A-Za-z]+)\s*}}`)
+
+// DynamicVars maps Postman/Bruno dynamic variables to monica built-ins:
+// $guid and $randomUUID become $uuid; $timestamp and $randomInt stay. It
+// returns the names monica has no equivalent for (left as they are).
+func DynamicVars(s string) (string, []string) {
+	var unknown []string
+	out := dynamicRe.ReplaceAllStringFunc(s, func(m string) string {
+		name := dynamicRe.FindStringSubmatch(m)[1]
+		switch name {
+		case "guid", "randomUUID", "uuid":
+			return "{{$uuid}}"
+		case "timestamp", "randomInt":
+			return "{{$" + name + "}}"
+		}
+		unknown = append(unknown, name)
+		return m
+	})
+	return out, unknown
+}
+
+// EnvName makes an OS environment variable name: API_KEY for "apiKey".
+func EnvName(key string) string {
+	var b strings.Builder
+	prevLower := false
+	for _, r := range key {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r - 'a' + 'A')
+			prevLower = true
+		case r >= 'A' && r <= 'Z':
+			if prevLower {
+				b.WriteByte('_')
+			}
+			b.WriteRune(r)
+			prevLower = false
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+			prevLower = true
+		default:
+			if b.Len() > 0 && !strings.HasSuffix(b.String(), "_") {
+				b.WriteByte('_')
+			}
+			prevLower = false
+		}
+	}
+	s := strings.Trim(b.String(), "_")
+	if s == "" || (s[0] >= '0' && s[0] <= '9') {
+		s = "V_" + s
 	}
 	return s
 }

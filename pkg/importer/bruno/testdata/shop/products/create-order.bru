@@ -1,0 +1,30 @@
+meta {
+  name: Create order
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/orders
+  body: formUrlEncoded
+  auth: inherit
+}
+
+body:form-urlencoded {
+  product: 42
+  note: gift wrap & card
+  ref: {{orderRef}}
+  ~coupon: X
+}
+
+script:pre-request {
+  bru.setVar("orderRef", "ord-" + Date.now());
+}
+
+tests {
+  test("created", function () {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.body.ref).to.equal(bru.getVar("orderRef"));
+  });
+  if (false) bru.runRequest("audit");
+}

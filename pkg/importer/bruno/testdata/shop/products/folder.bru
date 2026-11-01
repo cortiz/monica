@@ -1,0 +1,19 @@
+meta {
+  name: Products & Orders
+  seq: 2
+}
+
+auth {
+  mode: basic
+}
+
+auth:basic {
+  username: {{apiUser}}
+  password: {{apiPass}}
+}
+
+tests {
+  test("json response", function () {
+    expect(res.getHeader("content-type")).to.exist;
+  });
+}

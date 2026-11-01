@@ -1,0 +1,40 @@
+meta {
+  name: Log in
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/login
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "user": "ada",
+    "password": "{{password}}"
+  }
+}
+
+vars:post-response {
+  token: res.body.token
+}
+
+assert {
+  res.status: eq 200
+  res.body.token: isString
+  res.body.user.name: eq ada
+  ~res.body.nope: eq 1
+}
+
+script:post-response {
+  bru.setVar("userId", res.body.user.id);
+}
+
+tests {
+  test("returns the user", function () {
+    expect(res.getBody().user).to.eql({ id: 7, name: "ada" });
+    expect(res.getHeader("Content-Type")).to.include("json");
+  });
+}
