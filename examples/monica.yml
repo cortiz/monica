@@ -1,0 +1,16 @@
+# Config for every example below this folder. The requests go to httpbin.org,
+# which echoes what it receives; point them elsewhere with --var baseUrl=...
+version: 1
+defaults:
+  timeout: 10s
+  headers:
+    Accept: application/json
+  vars:
+    baseUrl: https://httpbin.org
+    name: grace           # 05-data-driven: replaced by each --data row
+scripts:
+  paths: [./lib]          # require("checks") finds lib/checks.js
+load:                     # monica load -s 01-basics/requests.mon
+  vus: 5
+  duration: 10s
+  thresholds: ["p95<1s", "errors<1%"]

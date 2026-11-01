@@ -1,0 +1,13 @@
+# Cookies: a run keeps one cookie jar. /cookies/set sets a cookie and
+# redirects to /cookies, which lists the cookies it received; the next
+# request gets the cookie too. Run with --no-cookies to see them fail.
+
+### Set a cookie
+GET {{baseUrl}}/cookies/set?session=abc123
+
+> {% test("cookie set", () => expect(res.json().cookies).toEqual({session: "abc123"})) %}
+
+### Sent on later requests
+GET {{baseUrl}}/cookies
+
+> {% test("cookie sent", () => expect(res.json().cookies.session).toBe("abc123")) %}

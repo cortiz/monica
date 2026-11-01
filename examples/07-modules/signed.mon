@@ -1,0 +1,22 @@
+# Modules: a TypeScript helper from lib/ (scripts.paths) signs the body, a
+# CommonJS helper adds tests, and the built-in monica/jsonpath reads the
+# response.
+
+### Signed request
+< {%
+  import { signature } from "sign";
+  req.headers.set("X-Signature", signature("example-secret", req.body));
+%}
+POST {{baseUrl}}/anything/orders
+Content-Type: application/json
+
+{"order": {"id": 42, "items": [{"sku": "a", "price": 3}, {"sku": "b", "price": 4}]}}
+
+> {%
+  const checks = require("checks");
+  const jp = require("monica/jsonpath");
+  checks.ok();
+  checks.echoed("json.order.id", 42);
+  test("prices", () => expect(jp.query(res.json(), "$.json.order.items[*].price")).toEqual([3, 4]));
+  test("signature sent", () => expect(res.json().headers["X-Signature"]).toHaveLength(44));
+%}

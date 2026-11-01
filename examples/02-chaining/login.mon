@@ -1,0 +1,27 @@
+# Chaining: the first response's token is stored with vars.set() and used by
+# the next request. (httpbin's /anything echoes the JSON it is sent, standing
+# in for a real login endpoint.)
+
+### Log in
+# @name login
+POST {{baseUrl}}/anything/login
+Content-Type: application/json
+
+{"user": "ada", "token": "tok-{{$randomInt}}"}
+
+> {%
+  vars.set("token", res.json().json.token);
+  test("got a token", () => expect(vars.get("token")).toMatch(/^tok-\d+$/));
+%}
+
+### Use the token
+# @name me
+GET {{baseUrl}}/bearer
+Authorization: Bearer {{token}}
+
+> {%
+  test("authenticated", () => {
+    expect(res.status).toBe(200);
+    expect(res.json()).toEqual({authenticated: true, token: vars.get("token")});
+  });
+%}

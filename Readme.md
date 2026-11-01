@@ -1,11 +1,24 @@
 # Monica
 
-Monica is designed to handle Network requests and responses. 
+Monica is one Go binary that **runs HTTP requests** written as plain-text `.mon` files (raw
+HTTP, like curl or Bruno), **tests them with JavaScript** (embedded, no Node.js) and
+**load-tests** the same files (like k6).
+
+**Contents:** [Usage](#usage) · [Load testing](#load-testing) · [Scripting](#scripting) ·
+[Modules](#modules) · [Folder hooks](#folder-hooks-monicajs) · [Configuration](#configuration) ·
+[Mon file format](#mon-file-format) · [Examples](examples/README.md) (runnable, one feature per folder)
 
 ## Features
-* Parse raw HTTP requests and return a Request object.
-* Send HTTP requests with custom headers and body.
-* Parse HTTP responses, including headers and body.
+* `.mon` files: raw HTTP requests with `{{variables}}`, directives (`@name`, `@timeout`,
+  `@retry`, `@skip`), body files and multipart uploads.
+* `monica.yml`: environments, default headers, `${SECRET}` values from the environment or
+  `.env` (masked in output), run order.
+* Pre-request and post-response scripts with `test()` / `expect()`, shared modules
+  (CommonJS, ES modules, TypeScript), folder hooks and built-in crypto/encoding/JSONPath.
+* Chaining with `vars.set()`, a cookie jar per run, data-driven runs (`--data` CSV/JSON).
+* Console, JSON and JUnit reports; exit codes for CI.
+* `monica load`: virtual users, ramping stages, arrival rates, percentiles, thresholds.
+* `monica init` to start a project, `monica import curl` to convert curl commands.
 
 ## Usage
 * Start a project: `monica.yml`, an `example.mon` and `.gitignore` entries

@@ -1,0 +1,12 @@
+# Every request here gets an X-Run-Id header from monica.js, and an extra
+# "no server error" test after it.
+
+### First
+GET {{baseUrl}}/headers
+
+> {% test("run id sent", () => expect(res.json().headers["X-Run-Id"]).toBe(vars.get("runId"))) %}
+
+### Same id on the next request
+GET {{baseUrl}}/anything/second
+
+> {% test("same run id", () => expect(res.json().headers["X-Run-Id"]).toBe(vars.get("runId"))) %}
