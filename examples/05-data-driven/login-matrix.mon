@@ -1,0 +1,14 @@
+# One request, several expected outcomes: the data file carries the
+# expectation too (httpbin's /basic-auth/<user>/right accepts only "right").
+#   monica run -s 05-data-driven/login-matrix.mon --data 05-data-driven/login-matrix.csv
+# Without --data, the defaults below make it a successful login.
+
+### Log in as the row's user
+# @name loginMatrix
+< {%
+  if (!vars.has("user")) { vars.set("user", "ada"); vars.set("pass", "right"); vars.set("expected", "200"); }
+  req.headers.set("Authorization", "Basic " + require("monica/encoding").base64Encode(vars.get("user") + ":" + vars.get("pass")));
+%}
+GET {{baseUrl}}/basic-auth/ada/right
+
+> {% test(`${vars.get("user")}/${vars.get("pass")} → ${vars.get("expected")}`, () => expect(res.status).toBe(Number(vars.get("expected")))) %}

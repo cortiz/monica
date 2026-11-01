@@ -8,6 +8,12 @@ defaults:
   vars:
     baseUrl: https://httpbin.org
     name: grace           # 05-data-driven: replaced by each --data row
+    pageSize: "20"        # 01-basics/variables.mon
+    sku: none             # 05-data-driven/create-product.mon (replaced by --data rows)
+    price: "0"
+envs:                     # selected with --env; empty ones keep the defaults
+  staging: {}             # 06-hooks/admin and 09-control/skip.mon run more on staging
+  prod: {}
 scripts:
   paths: [./lib]          # require("checks") finds lib/checks.js
 load:                     # monica load -s 01-basics/requests.mon

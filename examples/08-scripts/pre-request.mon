@@ -1,0 +1,36 @@
+# Pre-request scripts change the request before it is sent: headers, URL,
+# method and body (before {{}} expansion, so templates still work).
+
+### Build the body in a script
+# @name buildBody
+< {%
+  const order = { id: require("monica/random").uuid(), items: ["pen", "mug"], placedAt: new Date(0).toISOString() };
+  req.body = JSON.stringify(order);
+  req.headers.set("Content-Type", "application/json");
+  req.headers.set("X-Items", String(order.items.length));
+%}
+POST {{baseUrl}}/post
+
+> {%
+  test("body from the script", () => expect(res.json().json.items).toEqual(["pen", "mug"]));
+  test("header from the script", () => expect(res.json().headers["X-Items"]).toBe("2"));
+%}
+
+### Rewrite the URL and method
+# @name rewrite
+< {%
+  req.method = "PUT";
+  req.url = req.url.replace("/anything/draft", "/put") + "?v=" + monica.iteration;
+%}
+GET {{baseUrl}}/anything/draft
+
+> {%
+  test("now a PUT to /put", () => expect(res.json().url).toContain("/put?v="));
+%}
+
+### Templates still expand after the script
+# @name templates
+< {% req.headers.set("X-Who", "{{name}}") %}
+GET {{baseUrl}}/headers
+
+> {% test("expanded", () => expect(res.json().headers["X-Who"]).toBe(vars.get("name"))) %}

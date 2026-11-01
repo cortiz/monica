@@ -1,0 +1,26 @@
+meta {
+  name: Create todo
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/post
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "title": "buy-milk"
+  }
+}
+
+vars:post-response {
+  todoTitle: res.body.json.title
+}
+
+assert {
+  res.status: eq 200
+  res.body.json.title: eq buy-milk
+}

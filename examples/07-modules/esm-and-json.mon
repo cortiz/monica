@@ -1,0 +1,21 @@
+# ES module imports (default and named) from lib/ and a JSON file loaded
+# with require().
+
+### Build a body from a JSON fixture and an ES module
+# @name esm
+< {%
+  import slug, { money } from "format.mjs";
+  const fixtures = require("./fixtures.json");
+  const total = fixtures.items.reduce((sum, i) => sum + i.qty * i.price, 0);
+  vars.set("customer", slug(fixtures.customer.name));
+  vars.set("total", money(total));
+%}
+POST {{baseUrl}}/post
+Content-Type: application/json
+
+{"customer": "{{customer}}", "total": "{{total}}"}
+
+> {%
+  test("slug", () => expect(res.json().json.customer).toBe("ada-lovelace"));
+  test("money", () => expect(res.json().json.total).toBe("5.00 EUR"));
+%}

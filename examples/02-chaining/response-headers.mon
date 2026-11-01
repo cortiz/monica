@@ -1,0 +1,18 @@
+# Chaining from a response header: httpbin's /response-headers sets the
+# headers named in its query string.
+
+### Server hands out a request token in a header
+# @name issue
+GET {{baseUrl}}/response-headers?X-Request-Token=rt-777
+
+> {%
+  vars.set("requestToken", res.headers.get("X-Request-Token"));
+  test("header read", () => expect(vars.get("requestToken")).toBe("rt-777"));
+%}
+
+### Send it back
+# @name useToken
+GET {{baseUrl}}/headers
+X-Request-Token: {{requestToken}}
+
+> {% test("sent", () => expect(res.json().headers["X-Request-Token"]).toBe("rt-777")) %}

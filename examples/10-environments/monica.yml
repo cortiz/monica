@@ -1,0 +1,21 @@
+# This folder has its own monica.yml: .mon files use the nearest one.
+#   monica run -s 10-environments/envs.mon                 # defaults only
+#   monica run -s 10-environments/envs.mon --env staging   # staging values
+version: 1
+defaults:
+  headers:
+    X-Api-Version: "{{apiVersion}}"     # default headers may use variables
+  vars:
+    baseUrl: https://httpbin.org
+    apiVersion: v1
+    tier: free
+    apiToken: ${EXAMPLE_TOKEN}          # from the OS environment or .env next to this file
+envs:
+  staging:
+    vars:
+      apiVersion: v2
+      tier: trial
+  prod:
+    vars:
+      apiVersion: v2
+      tier: paid

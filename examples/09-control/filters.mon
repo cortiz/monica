@@ -1,0 +1,16 @@
+# Run part of a collection by name, title or "METHOD URL" (globs):
+#   monica run -r 3 --filter 'smoke-*'
+#   monica run -r 3 --filter 'GET *users*' --bail
+# A filtered-out request does not run its scripts either.
+
+### Smoke: health
+# @name smoke-health
+GET {{baseUrl}}/get?check=health
+
+> {% test("up", () => expect(res.status).toBe(200)) %}
+
+### Smoke: version
+# @name smoke-version
+GET {{baseUrl}}/get?check=version
+
+> {% test("up", () => expect(res.status).toBe(200)) %}

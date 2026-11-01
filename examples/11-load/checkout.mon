@@ -1,0 +1,33 @@
+# A user journey to load-test: each virtual user (VU) runs the whole file per
+# iteration, with its own variables and cookies.
+#   monica load -s 11-load/checkout.mon -u 10 --duration 30s
+#   monica load -s 11-load/checkout.mon --stage 10s:20 --stage 20s:20 --stage 10s:0
+#   monica load -s 11-load/checkout.mon --rate 20/s --duration 1m -u 50
+#   monica load -s 11-load/checkout.mon -i 100 -u 5 --threshold 'p95<500ms' --threshold 'add-to-cart:errors<1%'
+#   monica load -s 11-load/checkout.mon -u 5 --duration 10s -o report.json
+# Be gentle with httpbin.org: point baseUrl at your own server for real load.
+
+### Browse
+# @name browse
+< {%
+  // monica.vu / monica.iteration are 0 under monica run, 1-based under load.
+  vars.set("vu", String(monica.vu));
+  vars.set("iteration", String(monica.iteration));
+%}
+GET {{baseUrl}}/anything/products?vu={{vu}}
+
+### Add to cart
+# @name add-to-cart
+POST {{baseUrl}}/anything/cart
+Content-Type: application/json
+
+{"vu": {{vu}}, "iteration": {{iteration}}, "sku": "pen-01"}
+
+> {% test("added", () => expect(res.status).toBe(200)) %}
+
+### Pay
+# @name pay
+POST {{baseUrl}}/anything/pay
+Content-Type: application/json
+
+{"vu": {{vu}}, "amount": 2.5}

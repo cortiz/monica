@@ -1,0 +1,30 @@
+# Chaining inside one file: read a value from the first response and use it
+# in the URL, a header and the body of the next requests.
+
+### List
+# @name list
+GET {{baseUrl}}/anything/items?first=42&second=43
+
+> {%
+  vars.set("itemId", res.json().args.first);
+  test("got an id", () => expect(vars.get("itemId")).toBe("42"));
+%}
+
+### Detail of the first item
+# @name detail
+GET {{baseUrl}}/anything/items/{{itemId}}
+X-Item: {{itemId}}
+
+> {%
+  test("id in the path", () => expect(res.json().url).toContain("/items/42"));
+  test("id in a header", () => expect(res.json().headers["X-Item"]).toBe("42"));
+%}
+
+### Update it
+# @name update
+PUT {{baseUrl}}/put
+Content-Type: application/json
+
+{"id": {{itemId}}, "done": true}
+
+> {% test("id in the body", () => expect(res.json().json.id).toBe(42)) %}
