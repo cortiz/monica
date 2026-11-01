@@ -1,0 +1,206 @@
+{
+  "info": {
+    "_postman_id": "9b1c-shop",
+    "name": "Shop API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": { "type": "text/javascript", "exec": ["pm.request.headers.upsert({ key: 'X-Client', value: 'monica-import' });"] }
+    },
+    {
+      "listen": "test",
+      "script": { "type": "text/javascript", "exec": ["pm.test('no server error', function () {", "  pm.expect(pm.response.code).to.be.below(500);", "});"] }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "https://shop.example.com", "type": "string" },
+    { "key": "pageSize", "value": 20, "type": "number" },
+    { "key": "apiSecret", "value": "do-not-export", "type": "secret" },
+    { "key": "unused", "value": "x", "disabled": true }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Log in",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "const body = pm.response.json();",
+                  "pm.test('returns a token', () => {",
+                  "  pm.expect(body).to.have.property('token').that.is.a('string');",
+                  "  pm.expect(body.user).to.eql({ id: 7, name: 'ada' });",
+                  "});",
+                  "pm.environment.set('token', body.token);",
+                  "pm.collectionVariables.set('userId', body.user.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user\": \"ada\",\n  \"password\": \"{{password}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/login", "host": ["{{baseUrl}}"], "path": ["login"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Products & Orders",
+      "auth": {
+        "type": "basic",
+        "basic": [
+          { "key": "username", "value": "{{apiUser}}" },
+          { "key": "password", "value": "{{apiPass}}" }
+        ]
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": { "exec": ["pm.test('json response', () => pm.response.to.have.header('Content-Type'));"] }
+        }
+      ],
+      "item": [
+        {
+          "name": "List products",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('page of products', () => {",
+                  "  const items = pm.response.json().items;",
+                  "  pm.expect(items).to.be.an('array').that.is.not.empty;",
+                  "  pm.expect(items).to.have.lengthOf(2);",
+                  "  pm.expect(items[0].price).to.be.above(0).and.below(100);",
+                  "  pm.expect(pm.response.json()).to.have.nested.property('items[1].name', 'Mug');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "X-Debug", "value": "1", "disabled": true }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/products?page=1&size={{pageSize}}&draft=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["products"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "size", "value": "{{pageSize}}" },
+                { "key": "draft", "value": "true", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get product",
+          "request": {
+            "auth": { "type": "apikey", "apikey": [{ "key": "key", "value": "api_key" }, { "key": "value", "value": "{{apiKey}}" }, { "key": "in", "value": "query" }] },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/products/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["products", ":id"],
+              "variable": [{ "key": "id", "value": "42" }]
+            }
+          }
+        },
+        {
+          "name": "Create order",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": ["pm.environment.set('orderRef', 'ord-' + Date.now());"] }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('created', () => pm.expect(pm.response.code).to.equal(201));",
+                  "pm.test('echoes the ref', () => pm.expect(pm.response.json().ref).to.equal(pm.environment.get('orderRef')));",
+                  "if (false) { pm.sendRequest('https://example.com/audit', function () {}); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "product", "value": "42" },
+                { "key": "note", "value": "gift wrap & card" },
+                { "key": "ref", "value": "{{orderRef}}" },
+                { "key": "coupon", "value": "X", "disabled": true }
+              ]
+            },
+            "url": "{{baseUrl}}/orders"
+          }
+        },
+        {
+          "name": "Upload invoice",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "orderId", "value": "{{userId}}", "type": "text" },
+                { "key": "file", "type": "file", "src": "/Users/ada/Documents/invoice.pdf" }
+              ]
+            },
+            "url": "{{baseUrl}}/invoices"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Search (GraphQL)",
+      "request": {
+        "method": "POST",
+        "body": {
+          "mode": "graphql",
+          "graphql": { "query": "query ($q: String!) { search(q: $q) { id } }", "variables": "{\"q\": \"mug\"}" }
+        },
+        "url": "{{baseUrl}}/graphql"
+      }
+    },
+    {
+      "name": "Ping {{$randomFirstName}}",
+      "event": [
+        {
+          "listen": "test",
+          "script": { "exec": ["// a template literal with %} inside", "const s = `100%}`;", "pm.test('pong', () => pm.expect(pm.response.text()).to.include('pong'));"] }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "X-Request-Id", "value": "{{$guid}}" }],
+        "url": "{{baseUrl}}/ping?at={{$timestamp}}&who={{$randomFirstName}}"
+      }
+    }
+  ]
+}
