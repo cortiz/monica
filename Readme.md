@@ -23,6 +23,11 @@ HTTP, like curl or Bruno), **tests them with JavaScript** (embedded, no Node.js)
 
 ## Install
 
+* **Homebrew** (macOS):
+  ```bash
+  brew install cortiz/tap/monica
+  ```
+  Upgrade with `brew upgrade monica`. The tap is updated by each release.
 * **Binary** — download an archive for Linux, macOS, Windows or FreeBSD (amd64, arm64, arm,
   riscv64) from the [releases page](https://github.com/cortiz/monica/releases), check it
   against `checksums.txt`, and put `monica` on your `PATH`. Archives include this Readme and

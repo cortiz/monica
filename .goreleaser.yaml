@@ -59,6 +59,37 @@ archives:
 checksum:
   name_template: checksums.txt
 
+# Homebrew: each release updates a cask in the tap repository
+# github.com/cortiz/homebrew-tap, so users can run
+#   brew install cortiz/tap/monica
+# It needs a token that can push to the tap, as the HOMEBREW_TAP_GITHUB_TOKEN
+# secret (the workflow's own GITHUB_TOKEN can only write to this repository).
+# Without the secret, or for a pre-release (v1.0.0-rc.1), the tap is left
+# alone and the rest of the release still runs.
+homebrew_casks:
+  - name: monica
+    repository:
+      owner: cortiz
+      name: homebrew-tap
+      token: '{{ envOrDefault "HOMEBREW_TAP_GITHUB_TOKEN" "" }}'
+    directory: Casks
+    homepage: https://github.com/cortiz/monica
+    description: Run, test and load-test HTTP requests written as plain-text .mon files
+    license: MIT
+    binaries: [monica]
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "monica {{ .Tag }}"
+    skip_upload: '{{ if eq (envOrDefault "HOMEBREW_TAP_GITHUB_TOKEN" "") "" }}true{{ else }}auto{{ end }}'
+    hooks:
+      post:
+        # The binary is not notarized: clear macOS's quarantine flag so it runs.
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/monica"]
+          end
+
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
