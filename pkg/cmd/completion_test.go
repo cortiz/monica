@@ -59,6 +59,8 @@ func TestFlagCompletion(t *testing.T) {
 		{"mon files", completeMonFiles, flags(nil), []string{"mon"}, cobra.ShellCompDirectiveFilterFileExt},
 		{"data files", completeDataFiles, flags(nil), []string{"csv", "json"}, cobra.ShellCompDirectiveFilterFileExt},
 		{"reporters", completeReporters, flags(nil), []string{"console", "json", "junit"}, cobra.ShellCompDirectiveNoFileComp},
+		{"PEM files", completePEMFiles, flags(nil), []string{"pem", "crt", "cer", "key"}, cobra.ShellCompDirectiveFilterFileExt},
+		{"proxy", completeProxy, flags(nil), []string{"none"}, cobra.ShellCompDirectiveNoFileComp},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -79,10 +81,10 @@ func TestFlagCompletionsRegistered(t *testing.T) {
 		cmd   *cobra.Command
 		flags []string
 	}{
-		{run, []string{"env", "single", "data", "reporter"}},
-		{loadCmd, []string{"env", "single"}},
-		{tuiCmd, []string{"env"}},
-		{validateCmd, []string{"env", "single", "data"}},
+		{run, []string{"env", "single", "data", "reporter", "cert", "key", "cacert", "proxy"}},
+		{loadCmd, []string{"env", "single", "cert", "key", "cacert", "proxy"}},
+		{tuiCmd, []string{"env", "cert", "key", "cacert", "proxy"}},
+		{validateCmd, []string{"env", "single", "data", "cert", "key", "cacert", "proxy"}},
 	}
 	for _, tt := range tests {
 		for _, name := range tt.flags {

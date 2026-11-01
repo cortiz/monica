@@ -26,6 +26,10 @@ func registerCompletions() {
 		"single":   completeMonFiles,
 		"data":     completeDataFiles,
 		"reporter": completeReporters,
+		"cert":     completePEMFiles,
+		"key":      completePEMFiles,
+		"cacert":   completePEMFiles,
+		"proxy":    completeProxy,
 	}
 	for _, cmd := range []*cobra.Command{run, loadCmd, tuiCmd, validateCmd} {
 		for name, fn := range funcs {
@@ -71,6 +75,16 @@ func completeMonFiles(*cobra.Command, []string, string) ([]string, cobra.ShellCo
 // completeDataFiles completes .csv and .json files (and folders).
 func completeDataFiles(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 	return []string{"csv", "json"}, cobra.ShellCompDirectiveFilterFileExt
+}
+
+// completePEMFiles completes certificate and key files (and folders).
+func completePEMFiles(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+	return []string{"pem", "crt", "cer", "key"}, cobra.ShellCompDirectiveFilterFileExt
+}
+
+// completeProxy offers "none"; proxy URLs are typed.
+func completeProxy(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+	return []string{"none"}, cobra.ShellCompDirectiveNoFileComp
 }
 
 // completeReporters lists the --reporter formats.
