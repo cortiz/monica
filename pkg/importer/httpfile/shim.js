@@ -32,7 +32,9 @@ function unsupported(name) {
 
 function interpolate(s) {
   if (s === undefined || s === null) return s;
-  return String(s).replace(/{{\s*([^{}]+?)\s*}}/g, function (m, k) {
+  return String(s).replace(/{{([^{}]*)}}/g, function (m, k) {
+    k = k.trim();
+    if (k === "") return m;
     if (k === "$uuid" || k === "$random.uuid") return random.uuid();
     if (k === "$timestamp") return String(Math.floor(Date.now() / 1000));
     if (k === "$randomInt") return String(random.int(0, 999));
@@ -222,10 +224,14 @@ function datetime(a, utc) {
 
 function chars(n, alphabet) { return random.string(Number(n) || 10, alphabet); }
 
+// call returns the arguments of "name(a, b)" in expr ([] if expr isn't
+// that form). Plain string checks: no RegExp built from input.
 function call(expr, name) {
-  var m = new RegExp("^" + name.replace(/[$.]/g, "\\$&") + "\\(([^)]*)\\)$").exec(expr);
-  if (!m) return [];
-  return m[1].split(",").map(function (x) { return x.trim(); }).filter(function (x) { return x !== ""; });
+  var open = name + "(";
+  if (expr.indexOf(open) !== 0 || expr.charAt(expr.length - 1) !== ")") return [];
+  var inner = expr.slice(open.length, -1);
+  if (inner.indexOf(")") >= 0) return [];
+  return inner.split(",").map(function (x) { return x.trim(); }).filter(function (x) { return x !== ""; });
 }
 
 // dynamic computes a .http dynamic variable ("$datetime iso8601 1 d",
