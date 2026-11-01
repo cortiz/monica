@@ -300,6 +300,9 @@ VUs), `--no-keepalive`, `-k/--insecure` (also on `monica run`), a cookie jar per
   the version as a build arg, pinned Alpine with CA certificates, non-root user,
   `ENTRYPOINT ["monica"]`, `WORKDIR /work`; `.dockerignore`. The Docker workflow now runs on
   `v*` tags (it was watching branches) with semver image tags; `make snapshot` / `make docker`.
+  Homebrew: each release updates a cask in `cortiz/homebrew-tap` (GoReleaser
+  `homebrew_casks`; needs the `HOMEBREW_TAP_GITHUB_TOKEN` secret, skipped without it and for
+  pre-releases): `brew install cortiz/tap/monica`.
 
 ---
 
