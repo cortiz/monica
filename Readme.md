@@ -1,11 +1,23 @@
 # Monica
 
-Monica is one Go binary that **runs HTTP requests** written as plain-text `.mon` files (raw
-HTTP, like curl or Bruno), **tests them with JavaScript** (embedded, no Node.js) and
-**load-tests** the same files (like k6).
+Monica runs **HTTP requests written as plain-text `.mon` files**, checks the responses with
+**JavaScript tests**, and **load-tests** the same files. It is a single binary: no Node.js,
+no account, no GUI required (though there is a [terminal UI](#interactive-ui-monica-tui)).
 
-**Contents:** [Install](#install) · [Usage](#usage) · [Load testing](#load-testing) · [TUI](#interactive-ui-monica-tui) · [Scripting](#scripting) ·
-[Modules](#modules) · [Folder hooks](#folder-hooks-monicajs) · [Configuration](#configuration) ·
+```
+### Get a user
+GET https://httpbin.org/get?name=ada
+Accept: application/json
+
+> {% test("status is 200", () => expect(res.status).toBe(200)) %}
+```
+
+Keep `.mon` files next to your code, review them in pull requests, and run them in CI.
+
+**Contents:** [Install](#install) · [Quick start](#quick-start) · [Usage](#usage) ·
+[Importing](#importing-curl-postman-bruno) · [Load testing](#load-testing) ·
+[TUI](#interactive-ui-monica-tui) · [Scripting](#scripting) · [Modules](#modules) ·
+[Folder hooks](#folder-hooks-monicajs) · [Configuration](#configuration) ·
 [Mon file format](#mon-file-format) · [Examples](examples/README.md) (runnable, one feature per folder)
 
 ## Features
@@ -19,27 +31,130 @@ HTTP, like curl or Bruno), **tests them with JavaScript** (embedded, no Node.js)
 * Console, JSON and JUnit reports; exit codes for CI.
 * `monica load`: virtual users, ramping stages, arrival rates, percentiles, thresholds.
 * `monica tui`: browse, send and load-test requests in an interactive terminal UI.
-* `monica init` to start a project, `monica import curl` to convert curl commands.
+* `monica init` to start a project; `monica import curl|postman|bruno` to bring existing requests over.
 
 ## Install
 
-* **Homebrew** (macOS):
+Pick one; each gives you a `monica` command. Check it with `monica --version`.
+
+* **Binary** (Linux, macOS, Windows, FreeBSD) — download the archive for your system from the
+  [releases page](https://github.com/cortiz/monica/releases), unpack it and put `monica` on
+  your `PATH`:
+  ```bash
+  # Linux x86_64 shown; the others are monica_<Os>_<arch>.tar.gz (Darwin, Linux, Freebsd;
+  # x86_64, arm64, armv6, riscv64) and monica_Windows_<arch>.zip
+  VERSION=v1.0.0-rc.2
+  curl -LO https://github.com/cortiz/monica/releases/download/$VERSION/monica_Linux_x86_64.tar.gz
+  tar -xzf monica_Linux_x86_64.tar.gz monica
+  sudo mv monica /usr/local/bin/
+  ```
+  Each release has a `checksums.txt` (`sha256sum -c checksums.txt --ignore-missing`).
+  Archives also include this Readme and the [examples](examples/README.md). On macOS, a
+  binary downloaded with a browser is quarantined; clear it with `xattr -d com.apple.quarantine monica`.
+* **Homebrew** (macOS, from v1.0.0):
   ```bash
   brew install cortiz/tap/monica
   ```
-  Upgrade with `brew upgrade monica`. The tap is updated by each release.
-* **Binary** — download an archive for Linux, macOS, Windows or FreeBSD (amd64, arm64, arm,
-  riscv64) from the [releases page](https://github.com/cortiz/monica/releases), check it
-  against `checksums.txt`, and put `monica` on your `PATH`. Archives include this Readme and
-  the [examples](examples/README.md).
-* **Docker** — `docker run --rm -v "$PWD:/work" ghcr.io/cortiz/monica run -r 3` (the image's
-  entrypoint is `monica`; the current directory is mounted at `/work`, its working
-  directory). Tags: `1.2.3`, `1.2` per release.
-* **From source** — clone the repository and run `make build` (Go 1.27+); the binary is
-  `./monica`, versioned from `git describe`.
+  Upgrade with `brew upgrade monica`.
+* **Docker** (linux/amd64 and linux/arm64) — the image's entrypoint is `monica` and its
+  working directory `/work`, so mount your project there:
+  ```bash
+  docker run --rm -v "$PWD:/work" ghcr.io/cortiz/monica:1.0.0-rc.2 run -r 3
+  ```
+  Tags: `1.2.3` and `1.2` for each release, `latest` for the newest stable one; release
+  candidates (`1.0.0-rc.2`) only get their own tag.
+* **From source** — with Go 1.27+, clone the repository and run `make build`; the binary is
+  `./monica`.
 
-`monica --version` prints the version; requests without a `User-Agent` header send
-`monica/<version>`.
+Requests without a `User-Agent` header send `monica/<version>`.
+
+## Quick start
+
+A five-minute tour. The requests go to [httpbin.org](https://httpbin.org), a public service
+that echoes back what it receives.
+
+**1. Create a project.** `monica init` writes a `monica.yml` (settings and variables) and an
+`example.mon` with two requests:
+
+```bash
+mkdir my-api && cd my-api
+monica init
+monica run
+```
+
+```
+✓ getExample  GET https://httpbin.org/get?source=monica → 200 OK  312ms  (example.mon:4)
+    ✓ returns 200
+✓ postExample  POST https://httpbin.org/post → 200 OK  158ms  (example.mon:12)
+    ✓ echoes the body
+
+2 requests: 2 passed, 0 failed · 2 tests: 2 passed, 0 failed · 471ms
+```
+
+`monica run` also prints each response; add `-q` to hide them.
+
+**2. Write a request.** A `.mon` file is what you would send over the wire: a request line,
+headers, a blank line and a body. `{{baseUrl}}` comes from `monica.yml`. A `> {% ... %}` block
+after the request runs once the response arrives. Save this as `users.mon`:
+
+```
+### Create a user
+# @name createUser
+POST {{baseUrl}}/post
+Content-Type: application/json
+
+{"name": "ada"}
+
+> {%
+  test("created", () => expect(res.status).toBe(200));
+  vars.set("userName", res.json().json.name);   // keep a value for later requests
+%}
+
+### Look the user up
+# @name getUser
+GET {{baseUrl}}/get?name={{userName}}
+
+> {% test("found ada", () => expect(res.json().args.name).toBe("ada")) %}
+```
+
+```bash
+monica run -s users.mon -q
+```
+
+`###` separates requests, which run top to bottom; `vars.set` passes data from one to the next.
+
+**3. Use environments and secrets.** Add an environment to `monica.yml` and pick it with
+`--env`; `${NAME}` values are read from the shell or a `.env` file and masked as `****` in the
+output:
+
+```yaml
+envs:
+  prod:
+    vars:
+      baseUrl: https://api.example.com
+      token: ${PROD_TOKEN}
+```
+
+```bash
+monica run --env prod          # or override one value: --var baseUrl=http://localhost:8080
+```
+
+**4. Run it in CI.** The exit code is `0` when every request passed, `1` when any failed;
+`--reporter junit --out report.xml` writes a report your CI can show.
+
+**5. Load-test it.** The same file, with 10 virtual users for 30 seconds, failing if the 95th
+percentile is above 500ms:
+
+```bash
+monica load -s users.mon --vus 10 --duration 30s --threshold 'p95<500ms'
+```
+
+**6. Explore interactively.** `monica tui` opens a terminal UI to browse the requests, send
+them one at a time, and inspect responses and variables.
+
+Next: the [examples](examples/README.md) (one folder per feature), [scripting](#scripting)
+(`test`, `expect`, `vars`, modules), and the full [`.mon` format](#mon-file-format).
+Coming from curl, Postman or Bruno? See [Importing](#importing-curl-postman-bruno).
 
 ## Usage
 * Start a project: `monica.yml`, an `example.mon` and `.gitignore` entries
@@ -53,116 +168,11 @@ HTTP, like curl or Bruno), **tests them with JavaScript** (embedded, no Node.js)
 	them. Existing `monica.yml` and `example.mon` files are kept unless `-f, --force`; each
 	file is reported as `created`, `overwritten`, `updated` or `skipped`.
 
-* Turn a curl command (e.g. from the browser's "Copy as cURL") into a request
+* Run all `.mon` files in the current directory (add `-r 3` to include subfolders)
 	```bash
-	monica import curl 'curl https://api.example.com/users -H "Accept: application/json"'
-	pbpaste | monica import curl -o users.mon      # read the command from stdin
-	monica import curl -- curl -sS https://api.example.com/health   # already split by the shell
+	monica run
 	```
-	The `.mon` text goes to stdout, or to `-o, --out <file>` (an existing file is kept unless
-	`-f, --force`); `--name <name>` sets `@name`. Quoting follows the shell: `'...'`, `"..."`,
-	`$'...'`, backslash escapes and `\` line continuations (bash copies); a command with `^`
-	line continuations or `^"` quotes is read as Windows `cmd` would (`^` escapes, `"..."`,
-	`\"`), as in Chrome's "Copy as cURL (cmd)". Converted options:
-
-	| curl | `.mon` |
-	|------|--------|
-	| `-X`, `--request` | method (otherwise `HEAD` with `-I`, `PUT` with `-T`, `POST` with data, else `GET`) |
-	| `-H`, `--header` | header (`Name;` sends an empty value; `Name:` is ignored) |
-	| `-d`, `--data`, `--data-ascii` | body; several are joined with `&`; adds `Content-Type: application/x-www-form-urlencoded` unless set |
-	| `--data-raw`, `--data-binary`, `--data-urlencode` | body as is / URL-encoded (`name=value` encodes the value) |
-	| `-d @file`, `--data-binary @file`, `-T file` | `< file` body; with `--out`, relative paths are rewritten to be relative to the `.mon` file's folder (curl reads them from the current directory) |
-	| `--json` | body plus `Content-Type` and `Accept: application/json` |
-	| `-G`, `--get`, `--url-query` | data appended to the URL query |
-	| `-u user:pass`, `--oauth2-bearer` | `Authorization: Basic …` / `Bearer …` header |
-	| `-A`, `-e`, `-b name=value` | `User-Agent`, `Referer`, `Cookie` headers |
-	| `-F name=value`, `-F name=@file[;type=…][;filename=…]`, `-F name=<file`, `--form-string` | [multipart body](#multipart-bodies) (`< file` parts; a file's type is guessed from its extension) |
-	| `-m`, `--max-time` | `# @timeout` |
-	| several URLs | one request each, separated by `###` |
-
-	A URL without a scheme gets `http://`, as in curl. Options that don't change the request
-	(`-s`, `-v`, `-L`, `--compressed`, `-o`, …) are dropped; others (`-k`, `--proxy`, cookie
-	files, unknown options) are dropped with a warning on stderr, as are shell variables
-	(`$TOKEN`, kept as text) and anything after an unquoted `|`, `;`, `&`, `<` or `>`.
-	`-H @file`, data from stdin, and what a `.mon` file can't hold as written (an `-F` value
-	with a line break or one that starts with `< `, a body line starting with `###` or `> {%`,
-	a body ending in blank lines before another URL's request) are errors. Text such as `{{x}}` is kept and
-	warned about, since monica reads it as a variable.
-
-* Import a Postman collection (export it as **Collection v2.1**), with its environments
-	```bash
-	monica import postman shop.postman_collection.json --env dev.postman_environment.json -o shop
-	cd shop && monica run -r 3 --env shop-dev
-	```
-	* **Layout** — folders become directories and each request a `.mon` file (`### name`,
-	  `# @name`), listed in `order:` so they run in collection order. Collection and folder
-	  scripts become [`monica.js` hooks](#folder-hooks-monicajs) (`beforeEach` / `afterEach`).
-	* **Variables** — collection variables go to `defaults.vars`, each `--env` file to
-	  `envs.<name>` (the environment's name as a slug). Values of type *secret* are never
-	  written: they become `${NAME}` placeholders (listed in `.env.example`; `.env` is added to
-	  `.gitignore`). `{{var}}` syntax is the same; `{{$guid}}` / `{{$randomUUID}}` become
-	  `{{$uuid}}`, `{{$timestamp}}` and `{{$randomInt}}` stay, other dynamic variables are reported.
-	* **Requests** — URLs (disabled query parameters dropped, `:path` variables filled), enabled
-	  headers, bodies (raw with its content type, urlencoded, form-data with `< file` parts,
-	  file, GraphQL as JSON) and auth: bearer, basic (computed in a pre-request script when it
-	  uses variables), API key (header or query), OAuth 2.0's stored access token; auth is
-	  inherited from folders and the collection. Other auth types are reported.
-	* **Scripts** — pre-request and test scripts are copied into `< {% %}` / `> {% %}` blocks
-	  (or `.js` files when they contain `%}`) behind `const pm = require("monica-postman")();`,
-	  a compatibility module written to `lib/` (`scripts.paths`). It supports `pm.test`,
-	  `pm.expect` (Chai BDD subset: `equal`, `eql`, `include`, `property` / `nested.property`,
-	  `lengthOf`, `above` / `below` / `within`, `a` / `an`, `match`, `oneOf`, `keys`, `empty`,
-	  `true` / `false` / `null` / `ok`, `not`, `deep`), `pm.response` (`code`, `status`,
-	  `json()`, `text()`, `headers`, `to.have.status/header/jsonBody`, `to.be.ok/success/...`),
-	  `pm.request.headers.add/upsert/remove` and `pm.environment` / `collectionVariables` /
-	  `globals` / `variables` / `iterationData` (all monica `vars`). `pm.sendRequest`,
-	  `setNextRequest`, the legacy `postman.*` / `tests[...]` API, `pm.cookies`, timers and
-	  sandbox libraries get a `// TODO(monica-import):` line and a report entry.
-	* **Report** — `IMPORT_REPORT.md` lists everything not converted or converted with changes
-	  (secrets to set, files to copy from the author's machine, unsupported auth or script
-	  features). The output folder must be empty unless `-f, --force`.
-
-* Import a Bruno collection (the folder with `bruno.json`)
-	```bash
-	monica import bruno ./bruno/shop -o shop
-	cd shop && monica run -r 3 --env dev
-	```
-	* **Layout** — folders and `.bru` requests become directories and `.mon` files, run in
-	  Bruno's order (`seq`, then name; folders first) through `order:`. `collection.bru` headers
-	  become `defaults.headers`, its `vars:pre-request` `defaults.vars`; its scripts and tests,
-	  and those of each `folder.bru` (plus folder vars), become
-	  [`monica.js` hooks](#folder-hooks-monicajs). Folder headers are added to their requests.
-	* **Environments** — `environments/*.bru` become `envs.<file name>`; `vars:secret` names have
-	  no value in a Bruno collection, so they become `${NAME}` placeholders (listed in
-	  `.env.example`). `{{process.env.X}}` becomes `{{X}}`, read from `${X}`. Dynamic variables map
-	  as for Postman.
-	* **Requests** — URL with `params:path` filled (and `params:query` added when the URL has no
-	  query), enabled headers, bodies (`json`, `text`, `xml`, `sparql`, `form-urlencoded`,
-	  `multipart-form` with `@file(...)` parts copied into the project, `graphql` + vars as
-	  JSON) and auth with inheritance: bearer, basic, API key (header or query). Other auth
-	  modes, non-HTTP requests (gRPC, WebSocket) and `docs` are not converted.
-	* **Scripts** — `vars:pre-request`, `script:pre-request`, `vars:post-response`,
-	  `script:post-response`, `assert` and `tests` become `< {% %}` / `> {% %}` blocks, each
-	  part in its own `{ }` block behind
-	  `const { bru, req, res, expect } = require("monica-bruno")();` (written to `lib/`).
-	  `bru.getVar/setVar/getEnvVar/setEnvVar` use monica `vars`; `bru.interpolate`,
-	  `bru.getEnvName`; `req.getUrl/setUrl/getMethod/setMethod/getHeader(s)/setHeader(s)/getBody/setBody`;
-	  `res.status/headers/body/responseTime`, `res.getStatus/getHeader/getBody/...` and
-	  `res("a.b[0]")`; `expect` is Chai-style (the same subset as the Postman module). `assert`
-	  lines become `test()` calls (`eq`, `neq`, `gt(e)`, `lt(e)`, `in`, `notIn`, `contains`,
-	  `notContains`, `length`, `matches`, `notMatches`, `startsWith`, `endsWith`, `between`,
-	  `isEmpty`, `isNotEmpty`, `isNull`, `isUndefined`, `isDefined`, `isTruthy`, `isFalsy`,
-	  `isJson`, `isNumber`, `isString`, `isBoolean`, `isArray`). `bru.runRequest`,
-	  `bru.sendRequest`, `bru.setNextRequest`, `bru.sleep`, `bru.getProcessEnv`, timers and npm
-	  libraries get a `// TODO(monica-import):` line and a report entry.
-	* **Report** — `IMPORT_REPORT.md`, as for Postman. The output folder must be empty unless
-	  `-f, --force`, and can't be the collection folder.
-
-* Runs all `mon` files in the current directory
-	```bash
-	monica run 
-	```
-* Run a single file 
+* Run a single file
 	```bash
 	monica run -s <file>
 	```
@@ -740,6 +750,115 @@ in list order (the first matching entry counts; a folder's files keep path order
 follow in path order. `order` applies to the files that config governs; with several
 `monica.yml` files, each orders its own files. An entry that places no file is logged as a
 warning. `monica.local.yml` replaces the whole list.
+
+## Importing (curl, Postman, Bruno)
+
+Convert what you already have into `.mon` files and a `monica.yml`.
+
+* Turn a curl command (e.g. from the browser's "Copy as cURL") into a request
+	```bash
+	monica import curl 'curl https://api.example.com/users -H "Accept: application/json"'
+	pbpaste | monica import curl -o users.mon      # read the command from stdin
+	monica import curl -- curl -sS https://api.example.com/health   # already split by the shell
+	```
+	The `.mon` text goes to stdout, or to `-o, --out <file>` (an existing file is kept unless
+	`-f, --force`); `--name <name>` sets `@name`. Quoting follows the shell: `'...'`, `"..."`,
+	`$'...'`, backslash escapes and `\` line continuations (bash copies); a command with `^`
+	line continuations or `^"` quotes is read as Windows `cmd` would (`^` escapes, `"..."`,
+	`\"`), as in Chrome's "Copy as cURL (cmd)". Converted options:
+
+	| curl | `.mon` |
+	|------|--------|
+	| `-X`, `--request` | method (otherwise `HEAD` with `-I`, `PUT` with `-T`, `POST` with data, else `GET`) |
+	| `-H`, `--header` | header (`Name;` sends an empty value; `Name:` is ignored) |
+	| `-d`, `--data`, `--data-ascii` | body; several are joined with `&`; adds `Content-Type: application/x-www-form-urlencoded` unless set |
+	| `--data-raw`, `--data-binary`, `--data-urlencode` | body as is / URL-encoded (`name=value` encodes the value) |
+	| `-d @file`, `--data-binary @file`, `-T file` | `< file` body; with `--out`, relative paths are rewritten to be relative to the `.mon` file's folder (curl reads them from the current directory) |
+	| `--json` | body plus `Content-Type` and `Accept: application/json` |
+	| `-G`, `--get`, `--url-query` | data appended to the URL query |
+	| `-u user:pass`, `--oauth2-bearer` | `Authorization: Basic …` / `Bearer …` header |
+	| `-A`, `-e`, `-b name=value` | `User-Agent`, `Referer`, `Cookie` headers |
+	| `-F name=value`, `-F name=@file[;type=…][;filename=…]`, `-F name=<file`, `--form-string` | [multipart body](#multipart-bodies) (`< file` parts; a file's type is guessed from its extension) |
+	| `-m`, `--max-time` | `# @timeout` |
+	| several URLs | one request each, separated by `###` |
+
+	A URL without a scheme gets `http://`, as in curl. Options that don't change the request
+	(`-s`, `-v`, `-L`, `--compressed`, `-o`, …) are dropped; others (`-k`, `--proxy`, cookie
+	files, unknown options) are dropped with a warning on stderr, as are shell variables
+	(`$TOKEN`, kept as text) and anything after an unquoted `|`, `;`, `&`, `<` or `>`.
+	`-H @file`, data from stdin, and what a `.mon` file can't hold as written (an `-F` value
+	with a line break or one that starts with `< `, a body line starting with `###` or `> {%`,
+	a body ending in blank lines before another URL's request) are errors. Text such as `{{x}}` is kept and
+	warned about, since monica reads it as a variable.
+
+* Import a Postman collection (export it as **Collection v2.1**), with its environments
+	```bash
+	monica import postman shop.postman_collection.json --env dev.postman_environment.json -o shop
+	cd shop && monica run -r 3 --env shop-dev
+	```
+	* **Layout** — folders become directories and each request a `.mon` file (`### name`,
+	  `# @name`), listed in `order:` so they run in collection order. Collection and folder
+	  scripts become [`monica.js` hooks](#folder-hooks-monicajs) (`beforeEach` / `afterEach`).
+	* **Variables** — collection variables go to `defaults.vars`, each `--env` file to
+	  `envs.<name>` (the environment's name as a slug). Values of type *secret* are never
+	  written: they become `${NAME}` placeholders (listed in `.env.example`; `.env` is added to
+	  `.gitignore`). `{{var}}` syntax is the same; `{{$guid}}` / `{{$randomUUID}}` become
+	  `{{$uuid}}`, `{{$timestamp}}` and `{{$randomInt}}` stay, other dynamic variables are reported.
+	* **Requests** — URLs (disabled query parameters dropped, `:path` variables filled), enabled
+	  headers, bodies (raw with its content type, urlencoded, form-data with `< file` parts,
+	  file, GraphQL as JSON) and auth: bearer, basic (computed in a pre-request script when it
+	  uses variables), API key (header or query), OAuth 2.0's stored access token; auth is
+	  inherited from folders and the collection. Other auth types are reported.
+	* **Scripts** — pre-request and test scripts are copied into `< {% %}` / `> {% %}` blocks
+	  (or `.js` files when they contain `%}`) behind `const pm = require("monica-postman")();`,
+	  a compatibility module written to `lib/` (`scripts.paths`). It supports `pm.test`,
+	  `pm.expect` (Chai BDD subset: `equal`, `eql`, `include`, `property` / `nested.property`,
+	  `lengthOf`, `above` / `below` / `within`, `a` / `an`, `match`, `oneOf`, `keys`, `empty`,
+	  `true` / `false` / `null` / `ok`, `not`, `deep`), `pm.response` (`code`, `status`,
+	  `json()`, `text()`, `headers`, `to.have.status/header/jsonBody`, `to.be.ok/success/...`),
+	  `pm.request.headers.add/upsert/remove` and `pm.environment` / `collectionVariables` /
+	  `globals` / `variables` / `iterationData` (all monica `vars`). `pm.sendRequest`,
+	  `setNextRequest`, the legacy `postman.*` / `tests[...]` API, `pm.cookies`, timers and
+	  sandbox libraries get a `// TODO(monica-import):` line and a report entry.
+	* **Report** — `IMPORT_REPORT.md` lists everything not converted or converted with changes
+	  (secrets to set, files to copy from the author's machine, unsupported auth or script
+	  features). The output folder must be empty unless `-f, --force`.
+
+* Import a Bruno collection (the folder with `bruno.json`)
+	```bash
+	monica import bruno ./bruno/shop -o shop
+	cd shop && monica run -r 3 --env dev
+	```
+	* **Layout** — folders and `.bru` requests become directories and `.mon` files, run in
+	  Bruno's order (`seq`, then name; folders first) through `order:`. `collection.bru` headers
+	  become `defaults.headers`, its `vars:pre-request` `defaults.vars`; its scripts and tests,
+	  and those of each `folder.bru` (plus folder vars), become
+	  [`monica.js` hooks](#folder-hooks-monicajs). Folder headers are added to their requests.
+	* **Environments** — `environments/*.bru` become `envs.<file name>`; `vars:secret` names have
+	  no value in a Bruno collection, so they become `${NAME}` placeholders (listed in
+	  `.env.example`). `{{process.env.X}}` becomes `{{X}}`, read from `${X}`. Dynamic variables map
+	  as for Postman.
+	* **Requests** — URL with `params:path` filled (and `params:query` added when the URL has no
+	  query), enabled headers, bodies (`json`, `text`, `xml`, `sparql`, `form-urlencoded`,
+	  `multipart-form` with `@file(...)` parts copied into the project, `graphql` + vars as
+	  JSON) and auth with inheritance: bearer, basic, API key (header or query). Other auth
+	  modes, non-HTTP requests (gRPC, WebSocket) and `docs` are not converted.
+	* **Scripts** — `vars:pre-request`, `script:pre-request`, `vars:post-response`,
+	  `script:post-response`, `assert` and `tests` become `< {% %}` / `> {% %}` blocks, each
+	  part in its own `{ }` block behind
+	  `const { bru, req, res, expect } = require("monica-bruno")();` (written to `lib/`).
+	  `bru.getVar/setVar/getEnvVar/setEnvVar` use monica `vars`; `bru.interpolate`,
+	  `bru.getEnvName`; `req.getUrl/setUrl/getMethod/setMethod/getHeader(s)/setHeader(s)/getBody/setBody`;
+	  `res.status/headers/body/responseTime`, `res.getStatus/getHeader/getBody/...` and
+	  `res("a.b[0]")`; `expect` is Chai-style (the same subset as the Postman module). `assert`
+	  lines become `test()` calls (`eq`, `neq`, `gt(e)`, `lt(e)`, `in`, `notIn`, `contains`,
+	  `notContains`, `length`, `matches`, `notMatches`, `startsWith`, `endsWith`, `between`,
+	  `isEmpty`, `isNotEmpty`, `isNull`, `isUndefined`, `isDefined`, `isTruthy`, `isFalsy`,
+	  `isJson`, `isNumber`, `isString`, `isBoolean`, `isArray`). `bru.runRequest`,
+	  `bru.sendRequest`, `bru.setNextRequest`, `bru.sleep`, `bru.getProcessEnv`, timers and npm
+	  libraries get a `// TODO(monica-import):` line and a report entry.
+	* **Report** — `IMPORT_REPORT.md`, as for Postman. The output folder must be empty unless
+	  `-f, --force`, and can't be the collection folder.
 
 ## Mon file format
 ```
