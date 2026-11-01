@@ -144,11 +144,27 @@ phases (avg / p95)  dns 0 / 0 · connect 95µs / 410µs · tls 0 / 0 · waiting 
   comes first. Defaults come from `load.vus` and `load.duration` in `monica.yml` (`--config`
   or the nearest one above the current directory); `--iterations` alone ignores
   `load.duration`. Without either, 1 VU runs 1 iteration.
-* **Failures** — a request fails as in `monica run` (connection error, script error, failed
-  `test()`); `@skip`ped requests are not counted. Failures don't change the exit code (`0`);
-  input errors (invalid file or config, unknown variable, an iteration with no requests left
-  after `--filter`/`@skip`) stop the test with exit code `2`, and Ctrl-C prints the summary
-  so far with exit code `1`.
+* **Thresholds** — pass/fail conditions checked at the end, from `load.thresholds` in
+  `monica.yml` or `--threshold` flags (which replace the config list):
+
+  ```bash
+  monica load -u 20 --duration 1m --threshold 'p95<300ms' --threshold 'errors<1%' \
+    --threshold 'login:p(99.9)<1s' --threshold 'rps>=100'
+  ```
+
+  Each is `[request:]metric op value` with `op` one of `<`, `<=`, `>`, `>=`. Metrics:
+  `min`, `avg`, `med`, `max` and percentiles `p95` / `p(99.9)` (compared with a duration such
+  as `300ms`), `errors` (failed share of requests: `1%` or `0.01`) and `rps` (requests per
+  second). `request:` limits it to the requests with that label (`@name`, title or
+  `METHOD URL`); without it, all requests count. A threshold on requests that never ran (or
+  never got a response, for latency metrics) fails. Results are printed after the summary
+  (`✓ p95<300ms  p95=120ms`); an invalid threshold is a usage error.
+* **Failures and exit codes** — a request fails as in `monica run` (connection error, script
+  error, failed `test()`); `@skip`ped requests are not counted. Failed requests alone don't
+  change the exit code; a failed threshold exits with `1`. Input errors (invalid file or
+  config, unknown variable, an iteration with no requests left after `--filter`/`@skip`)
+  stop the test with exit code `2`, and Ctrl-C prints the summary (and thresholds) so far
+  with exit code `1`.
 * Only warnings and errors are logged (`console.log` output too), unless `--debug`.
 
 | Flag | Meaning |
@@ -157,6 +173,7 @@ phases (avg / p95)  dns 0 / 0 · connect 95µs / 410µs · tls 0 / 0 · waiting 
 | `--duration <d>` | Stop starting iterations after this long, e.g. `30s` (default `load.duration`) |
 | `-i, --iterations <n>` | Total iterations, shared by all VUs |
 | `--graceful-stop <d>` | Time running iterations get at the end of `--duration` (default `30s`) |
+| `--threshold <cond>` | Pass/fail condition, e.g. `p95<300ms`, `login:errors<1%`; repeatable, replaces `load.thresholds` |
 | `-s`, `-r`, `-e`, `--var`, `-c`, `--filter` | As for `monica run` |
 
 ## Scripting
@@ -413,7 +430,7 @@ order: [auth/login.mon, users]  # run these first (see Run order)
 load:                       # defaults for monica load
   vus: 50
   duration: 30s
-  thresholds: ["p95<300ms", "errors<1%"]   # reserved (not used yet)
+  thresholds: ["p95<300ms", "errors<1%"]   # pass/fail conditions (see Load testing)
 ```
 
 * Unknown keys, a missing or unsupported `version` and invalid durations are errors that name
