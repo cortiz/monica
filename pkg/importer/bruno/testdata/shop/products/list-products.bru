@@ -1,0 +1,36 @@
+meta {
+  name: List products
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/products?page=1&size={{pageSize}}
+  body: none
+  auth: inherit
+}
+
+params:query {
+  page: 1
+  size: {{pageSize}}
+  ~draft: true
+}
+
+headers {
+  Accept: application/json
+  ~X-Debug: 1
+}
+
+assert {
+  res.body.items: length 2
+  res.body.items[1].name: eq Mug
+  res.body.items[0].price: between 1, 99
+  res.status: in 200, 201
+}
+
+tests {
+  test("page of products", function () {
+    expect(res("items[0].name")).to.equal("Pen");
+    expect(res.body.items).to.be.an("array").that.is.not.empty;
+  });
+}

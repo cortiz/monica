@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"jmpeax.com/sec/monica/pkg/importer"
 	"jmpeax.com/sec/monica/pkg/importer/postman"
 )
 
@@ -31,6 +32,7 @@ func TestPostmanShim(t *testing.T) {
 		}
 	}
 	write("lib/monica-postman.js", postman.Shim())
+	write("lib/monica-chai.js", importer.ChaiJS)
 	write("monica.yml", "version: 1\nscripts:\n  paths: [./lib]\n")
 	write("shim.mon", `< {%
 const pm = require("monica-postman")();

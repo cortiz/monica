@@ -229,8 +229,8 @@ func TestNames(t *testing.T) {
 		{"!!!", "V_", "item", ""},
 	}
 	for _, tt := range tests {
-		if got := envName(tt.in); got != tt.env {
-			t.Errorf("envName(%q) = %q, want %q", tt.in, got, tt.env)
+		if got := importer.EnvName(tt.in); got != tt.env {
+			t.Errorf("EnvName(%q) = %q, want %q", tt.in, got, tt.env)
 		}
 		if got := importer.Slug(tt.in); got != tt.slug {
 			t.Errorf("Slug(%q) = %q, want %q", tt.in, got, tt.slug)

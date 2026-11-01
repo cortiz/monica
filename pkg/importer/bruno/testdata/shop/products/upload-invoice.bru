@@ -1,0 +1,16 @@
+meta {
+  name: Upload invoice
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/invoices
+  body: multipartForm
+  auth: inherit
+}
+
+body:multipart-form {
+  orderId: {{userId}}
+  file: @file(files/invoice.pdf)
+}

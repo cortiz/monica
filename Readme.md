@@ -117,6 +117,42 @@ HTTP, like curl or Bruno), **tests them with JavaScript** (embedded, no Node.js)
 	  (secrets to set, files to copy from the author's machine, unsupported auth or script
 	  features). The output folder must be empty unless `-f, --force`.
 
+* Import a Bruno collection (the folder with `bruno.json`)
+	```bash
+	monica import bruno ./bruno/shop -o shop
+	cd shop && monica run -r 3 --env dev
+	```
+	* **Layout** — folders and `.bru` requests become directories and `.mon` files, run in
+	  Bruno's order (`seq`, then name; folders first) through `order:`. `collection.bru` headers
+	  become `defaults.headers`, its `vars:pre-request` `defaults.vars`; its scripts and tests,
+	  and those of each `folder.bru` (plus folder vars), become
+	  [`monica.js` hooks](#folder-hooks-monicajs). Folder headers are added to their requests.
+	* **Environments** — `environments/*.bru` become `envs.<file name>`; `vars:secret` names have
+	  no value in a Bruno collection, so they become `${NAME}` placeholders (listed in
+	  `.env.example`). `{{process.env.X}}` becomes `{{X}}`, read from `${X}`. Dynamic variables map
+	  as for Postman.
+	* **Requests** — URL with `params:path` filled (and `params:query` added when the URL has no
+	  query), enabled headers, bodies (`json`, `text`, `xml`, `sparql`, `form-urlencoded`,
+	  `multipart-form` with `@file(...)` parts copied into the project, `graphql` + vars as
+	  JSON) and auth with inheritance: bearer, basic, API key (header or query). Other auth
+	  modes, non-HTTP requests (gRPC, WebSocket) and `docs` are not converted.
+	* **Scripts** — `vars:pre-request`, `script:pre-request`, `vars:post-response`,
+	  `script:post-response`, `assert` and `tests` become `< {% %}` / `> {% %}` blocks, each
+	  part in its own `{ }` block behind
+	  `const { bru, req, res, expect } = require("monica-bruno")();` (written to `lib/`).
+	  `bru.getVar/setVar/getEnvVar/setEnvVar` use monica `vars`; `bru.interpolate`,
+	  `bru.getEnvName`; `req.getUrl/setUrl/getMethod/setMethod/getHeader(s)/setHeader(s)/getBody/setBody`;
+	  `res.status/headers/body/responseTime`, `res.getStatus/getHeader/getBody/...` and
+	  `res("a.b[0]")`; `expect` is Chai-style (the same subset as the Postman module). `assert`
+	  lines become `test()` calls (`eq`, `neq`, `gt(e)`, `lt(e)`, `in`, `notIn`, `contains`,
+	  `notContains`, `length`, `matches`, `notMatches`, `startsWith`, `endsWith`, `between`,
+	  `isEmpty`, `isNotEmpty`, `isNull`, `isUndefined`, `isDefined`, `isTruthy`, `isFalsy`,
+	  `isJson`, `isNumber`, `isString`, `isBoolean`, `isArray`). `bru.runRequest`,
+	  `bru.sendRequest`, `bru.setNextRequest`, `bru.sleep`, `bru.getProcessEnv`, timers and npm
+	  libraries get a `// TODO(monica-import):` line and a report entry.
+	* **Report** — `IMPORT_REPORT.md`, as for Postman. The output folder must be empty unless
+	  `-f, --force`, and can't be the collection folder.
+
 * Runs all `mon` files in the current directory
 	```bash
 	monica run 
