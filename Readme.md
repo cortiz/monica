@@ -324,6 +324,14 @@ monica · env dev · 2 sent
 ╰─────────────────────────╯╰───────────────────────────────────────────────╯
 ```
 
+![monica tui: tree, request and JSON response](docs/images/tui/1-main.png)
+
+![monica tui: live load test](docs/images/tui/6-load-live.png)
+
+More: [tests tab](docs/images/tui/2-tests.png) · [variables](docs/images/tui/3-variables.png) ·
+[environments](docs/images/tui/4-env.png) · [history](docs/images/tui/5-history.png) ·
+[load summary](docs/images/tui/7-load-done.png).
+
 * **Tree** — folders, `.mon` files and their requests in [run order](#run-order), marked ✓/✗/-
   after a send. A file that doesn't parse is marked `!` and shows its error.
 * **Request** — the selected request's section of the file, scripts included.
