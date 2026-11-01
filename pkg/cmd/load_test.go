@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,8 +19,8 @@ func runLoadCLI(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	loadSingle, loadRecursive, loadEnv, loadVarFlags, loadConfig, loadFilters = "", 1, "", nil, "", nil
 	loadVUs, loadDuration, loadIterations, loadGracefulStop, loadThresholds = 1, 0, 0, load.DefaultGracefulStop, nil
-	loadRate, loadStages, loadOut, loadQuiet, loadInsecure, loadNoKeepAlive = "", nil, "", false, false, false
-	for _, name := range []string{"single", "recursive", "env", "var", "config", "filter", "vus", "duration", "iterations", "graceful-stop", "threshold", "rate", "stage", "out", "quiet", "insecure", "no-keepalive"} {
+	loadRate, loadStages, loadOut, loadQuiet, loadInsecure, loadNoKeepAlive, loadTLS = "", nil, "", false, false, false, tlsFlags{}
+	for _, name := range []string{"single", "recursive", "env", "var", "config", "filter", "vus", "duration", "iterations", "graceful-stop", "threshold", "rate", "stage", "out", "quiet", "insecure", "no-keepalive", "cert", "key", "cacert", "proxy"} {
 		if f := loadCmd.Flags().Lookup(name); f != nil {
 			f.Changed = false
 		}
@@ -272,4 +273,47 @@ func TestInsecureFlag(t *testing.T) {
 			t.Fatalf("exit %d: %s %s", code, stdout, stderr)
 		}
 	})
+}
+
+func TestTLSFlags(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+	dir := t.TempDir()
+	mon := writeMon(t, dir, "tls.mon", "GET "+srv.URL+"/\n")
+	ca := writeMon(t, dir, "ca.pem", string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})))
+	chdir(t, dir)
+
+	tests := []struct {
+		name       string
+		load       bool
+		args       []string
+		wantCode   int
+		wantStderr string
+	}{
+		{"run --cacert trusts the server", false, []string{"run", "-s", mon, "--cacert", ca}, ExitOK, ""},
+		{"load --cacert trusts the server", true, []string{"-i", "2", "--cacert", ca, "--threshold", "errors<1%"}, ExitOK, ""},
+		{"run --cert without --key", false, []string{"run", "-s", mon, "--cert", ca}, ExitUsage, "--cert " + ca + " needs --key"},
+		{"load --key without --cert", true, []string{"-i", "1", "--key", ca}, ExitUsage, "--key " + ca + " needs --cert"},
+		{"run --cacert missing file", false, []string{"run", "-s", mon, "--cacert", "nope.pem"}, ExitUsage, "nope.pem"},
+		{"run --cert not a key pair", false, []string{"run", "-s", mon, "--cert", ca, "--key", ca}, ExitUsage, "loading client certificate"},
+		{"run --proxy bad URL", false, []string{"run", "-s", mon, "--proxy", "ftp://u:hunter2@proxy"}, ExitUsage, "invalid proxy URL"},
+		{"run --proxy none", false, []string{"run", "-s", mon, "--proxy", "none", "-k"}, ExitOK, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var code int
+			var stdout, stderr string
+			if tt.load {
+				code, stdout, stderr = runLoadCLI(t, tt.args...)
+			} else {
+				code, stdout, stderr = runCLI(t, tt.args...)
+			}
+			if code != tt.wantCode || !strings.Contains(stderr, tt.wantStderr) {
+				t.Fatalf("exit %d (want %d): %s %s", code, tt.wantCode, stdout, stderr)
+			}
+			if strings.Contains(stdout+stderr, "hunter2") {
+				t.Fatalf("proxy password printed: %s %s", stdout, stderr)
+			}
+		})
+	}
 }

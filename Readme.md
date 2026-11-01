@@ -220,6 +220,9 @@ Coming from curl, Postman or Bruno? See [Importing](#importing-curl-postman-brun
 | `-q, --quiet` | Hide response headers and bodies in the console report |
 | `--data <file>` | Run once per row of a `.csv` or `.json` file, with the row's values as variables |
 | `-k, --insecure` | Skip TLS certificate verification (as `insecureSkipVerify: true` in every config) |
+| `--cert <file>`, `--key <file>` | Client certificate and its private key (PEM) for mutual TLS; set both; override `tls.clientCert`/`tls.clientKey` |
+| `--cacert <file>` | Extra CA certificates (PEM) trusted besides the system ones; overrides `tls.caCert` |
+| `--proxy <url>` | Proxy (`http://`, `https://` or `socks5://`), or `none` to ignore `HTTP(S)_PROXY`; overrides `proxy` |
 | `--no-cookies` | Don't keep cookies between requests |
 
 **Cookies** — a run keeps one cookie jar: cookies a response sets (`Set-Cookie`) are sent on
@@ -442,6 +445,7 @@ While it runs, a progress line is redrawn on stderr ([screenshot](docs/images/lo
 | `-q, --quiet` | No live progress line |
 | `--no-keepalive` | New connection for every request |
 | `-k, --insecure` | Skip TLS certificate verification |
+| `--cert`, `--key`, `--cacert`, `--proxy` | As for `monica run` (certificate files are read once and shared by all VUs) |
 | `--threshold <cond>` | Pass/fail condition, e.g. `p95<300ms`, `login:errors<1%`; repeatable, replaces `load.thresholds` |
 | `-s`, `-r`, `-e`, `--var`, `-c`, `--filter` | As for `monica run` |
 
@@ -517,6 +521,7 @@ More: [tests tab](docs/images/tui/2-tests.png) · [variables](docs/images/tui/3-
 | `-r, --recursive <n>` | Folder depth to list `.mon` files from (default 3) |
 | `-e, --env <name>` | Environment to start with (default `$MONICA_ENV`) |
 | `--var name=value`, `-c, --config`, `-k, --insecure`, `--no-cookies` | As for `monica run` |
+| `--cert`, `--key`, `--cacert`, `--proxy` | As for `monica run` |
 
 Colors follow the terminal's light or dark background (asked when the TUI starts; other
 commands never query the terminal).
@@ -755,6 +760,11 @@ defaults:                   # apply to every environment
   timeout: 30s              # Go duration: 500ms, 5s, 1m
   followRedirects: true
   insecureSkipVerify: false # true accepts self-signed certificates
+  tls:                      # PEM files, relative to this file; ${NAME} allowed
+    caCert: certs/corp-ca.pem       # trusted in addition to the system CAs
+    # clientCert: certs/client.pem  # mutual TLS: set clientCert and clientKey together
+    # clientKey: certs/client-key.pem
+  proxy: http://proxy.corp:3128     # or socks5://host:port; none (or "") = no proxy
   headers:                  # added when a request doesn't set them
     User-Agent: monica/0.2.0
   vars:
@@ -766,6 +776,10 @@ envs:                       # each env merges over defaults
       pass: ${DEV_PASSWORD}
   prod:
     timeout: 10s
+    tls:
+      clientCert: certs/prod.pem
+      clientKey: ${PROD_KEY_FILE}
+    proxy: none
     vars:
       baseUrl: https://api.example.com
 scripts:
@@ -796,6 +810,19 @@ load:                       # defaults for monica load
 * **`monica.local.yml`** next to `monica.yml` deep-merges on top of it (`version` optional).
   Keep it and `.env` out of version control for personal or secret values.
 * Default header values may use `{{name}}`; variable values are used literally.
+* **TLS** — `tls.caCert` adds CA certificates to the system ones (no `insecureSkipVerify`
+  needed for a private CA); `tls.clientCert` and `tls.clientKey` send a client certificate
+  (mutual TLS) and must be set together (one without the other is an error). Paths are
+  relative to the file that sets them; `${NAME}` is expanded. An environment, or
+  `monica.local.yml`, that sets `clientCert`/`clientKey` replaces both; `caCert` is replaced
+  on its own. Files are read once per run, when the config is loaded and before its
+  requests are sent (flag files before anything runs); a missing or invalid file is a config
+  error (exit 2). `--cert`, `--key` and `--cacert` override them.
+* **Proxy** — without `proxy`, the `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` environment
+  variables apply (loopback addresses are never proxied). `proxy: http://host:port` (also
+  `https://` and `socks5://`, optionally with `user:password@`) sends every request through
+  that proxy; `proxy: none` or `proxy: ""` connects directly, ignoring the environment.
+  `--proxy` overrides it. A proxy password is masked like a secret.
 
 ### Run order
 

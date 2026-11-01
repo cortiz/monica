@@ -47,6 +47,8 @@ type Runner struct {
 	filters  []*regexp.Regexp          // compiled Opts.Filters
 	onlyLine int                       // RunRequestAt: run only this request line
 
+	transports *net.Transports // see pool
+
 	iteration int // 1-based --data row being run; 0 without --data
 	row       Row // its variables
 
@@ -99,6 +101,9 @@ func RunSingleFile(file string, opts *Opts, out io.Writer) error {
 // failures are in the report.
 func (r *Runner) Finish() error {
 	_ = r.AfterAll()
+	if r.transports != nil {
+		r.transports.CloseIdle()
+	}
 	return r.rep.Done(report.Summarize(r.results, time.Since(r.start)))
 }
 
@@ -481,6 +486,19 @@ func (r *Runner) render(req *request.Request, s *config.Resolved) (*request.Requ
 	return out, nil
 }
 
+// pool is Opts.Transports, or the runner's own pool: projects with the
+// same TLS and proxy settings share a transport, and certificate files
+// are read once per run.
+func (r *Runner) pool() *net.Transports {
+	if r.opts.Transports != nil {
+		return r.opts.Transports
+	}
+	if r.transports == nil {
+		r.transports = net.NewTransports(net.TransportOptions{})
+	}
+	return r.transports
+}
+
 // project returns the resolved config for file: --config if given, else the
 // nearest monica.yml above the file, else the built-in settings.
 func (r *Runner) project(file string) (*project, error) {
@@ -514,16 +532,35 @@ func (r *Runner) project(file string) (*project, error) {
 		scriptTimeout = cfg.Scripts.Timeout.Duration
 		root, scriptPaths = filepath.Dir(path), cfg.Scripts.Paths
 	}
+	tc, err := r.opts.transportConfig(settings)
+	if err != nil {
+		return nil, err
+	}
+	secrets := append(append([]string(nil), settings.Secrets...), config.ProxySecrets(tc.Proxy)...)
+	mask := newMasker(secrets)
+	if tc.Proxy != "" {
+		logging.Log.Debug().Msg(mask.String("Using proxy " + tc.Proxy))
+	}
+	// Certificate files are read here, once per transport, before any
+	// request of the project is sent.
+	client, err := net.New(net.Options{
+		Timeout:            settings.Timeout,
+		NoFollowRedirects:  !settings.FollowRedirects,
+		InsecureSkipVerify: tc.InsecureSkipVerify,
+		ClientCert:         tc.ClientCert,
+		ClientKey:          tc.ClientKey,
+		CACert:             tc.CACert,
+		Proxy:              tc.Proxy,
+		Transports:         r.pool(),
+		Jar:                r.opts.CookieJar,
+	})
+	if err != nil {
+		return nil, mask.Error(err)
+	}
 	p := &project{
-		settings: settings,
-		client: net.NewClient(net.Options{
-			Timeout:            settings.Timeout,
-			NoFollowRedirects:  !settings.FollowRedirects,
-			InsecureSkipVerify: settings.InsecureSkipVerify || r.opts.Insecure,
-			Transports:         r.opts.Transports,
-			Jar:                r.opts.CookieJar,
-		}),
-		mask:          newMasker(settings.Secrets),
+		settings:      settings,
+		client:        client,
+		mask:          mask,
 		scriptTimeout: scriptTimeout,
 		root:          root,
 		scriptPaths:   scriptPaths,

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -41,11 +42,26 @@ type Config struct {
 // Settings are the request settings shared by defaults and environments.
 // Unset fields (nil / zero) inherit from the level below.
 type Settings struct {
-	Timeout            Duration          `yaml:"timeout"`
-	FollowRedirects    *bool             `yaml:"followRedirects"`
-	InsecureSkipVerify *bool             `yaml:"insecureSkipVerify"`
-	Headers            map[string]string `yaml:"headers"`
-	Vars               map[string]string `yaml:"vars"`
+	Timeout            Duration     `yaml:"timeout"`
+	FollowRedirects    *bool        `yaml:"followRedirects"`
+	InsecureSkipVerify *bool        `yaml:"insecureSkipVerify"`
+	TLS                *TLSSettings `yaml:"tls"`
+	// Proxy is a proxy URL, or "none" / "" for no proxy; nil leaves the
+	// HTTP(S)_PROXY environment variables in charge.
+	Proxy   *string           `yaml:"proxy"`
+	Headers map[string]string `yaml:"headers"`
+	Vars    map[string]string `yaml:"vars"`
+}
+
+// TLSSettings are PEM files for TLS, relative to the config file that sets
+// them; ${NAME} references are expanded.
+type TLSSettings struct {
+	// ClientCert and ClientKey are the client certificate (mTLS) and its
+	// private key; they are set (and overridden) together.
+	ClientCert string `yaml:"clientCert"`
+	ClientKey  string `yaml:"clientKey"`
+	// CACert holds CA certificates trusted in addition to the system ones.
+	CACert string `yaml:"caCert"`
 }
 
 // Scripts configures script execution.
@@ -178,6 +194,16 @@ func validateOrder(order []string) error {
 }
 
 func (s Settings) validate(where string) error {
+	if s.TLS != nil {
+		if err := s.TLS.validate(); err != nil {
+			return fmt.Errorf("%s.tls: %w", where, err)
+		}
+	}
+	if s.Proxy != nil && !strings.Contains(*s.Proxy, "${") {
+		if _, err := ParseProxy(*s.Proxy); err != nil {
+			return fmt.Errorf("%s.proxy: %w", where, err)
+		}
+	}
 	for _, name := range sortedKeys(s.Headers) {
 		if !tokenRe.MatchString(name) {
 			return fmt.Errorf("%s.headers: invalid header name %q", where, name)
@@ -189,6 +215,59 @@ func (s Settings) validate(where string) error {
 		}
 	}
 	return nil
+}
+
+// validate checks that the client certificate and key come together.
+func (t *TLSSettings) validate() error {
+	switch {
+	case t.ClientCert != "" && t.ClientKey == "":
+		return fmt.Errorf("clientCert %q is set without clientKey", t.ClientCert)
+	case t.ClientKey != "" && t.ClientCert == "":
+		return fmt.Errorf("clientKey %q is set without clientCert", t.ClientKey)
+	}
+	return nil
+}
+
+// ProxyNone disables proxying, environment variables included.
+const ProxyNone = "none"
+
+const proxyHint = `expected http://host:port, https://host:port, socks5://host:port or "none"`
+
+// ParseProxy checks a proxy setting and returns it normalized: ProxyNone
+// for "none" or "", else an http, https, socks5 or socks5h URL with a host.
+// Errors never show the URL's password.
+func ParseProxy(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" || s == ProxyNone {
+		return ProxyNone, nil
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return "", errors.New("invalid proxy URL (" + proxyHint + ")")
+	}
+	switch u.Scheme {
+	case "http", "https", "socks5", "socks5h":
+	default:
+		return "", fmt.Errorf("invalid proxy URL %q (%s)", u.Redacted(), proxyHint)
+	}
+	if u.Hostname() == "" {
+		return "", fmt.Errorf("invalid proxy URL %q: missing host", u.Redacted())
+	}
+	return s, nil
+}
+
+// ProxySecrets returns the credentials in a proxy URL (its password, also
+// URL-escaped, and the user:password pair), for masking.
+func ProxySecrets(proxy string) []string {
+	u, err := url.Parse(proxy)
+	if err != nil || u.User == nil {
+		return nil
+	}
+	pass, ok := u.User.Password()
+	if !ok || pass == "" {
+		return nil
+	}
+	return []string{pass, url.QueryEscape(pass), u.User.String()}
 }
 
 // Find walks up from dir looking for monica.yml and returns its path, or ""

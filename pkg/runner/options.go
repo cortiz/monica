@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"jmpeax.com/sec/monica/internal/config"
@@ -39,6 +40,13 @@ type Opts struct {
 	// Insecure skips TLS certificate verification for every request, as if
 	// insecureSkipVerify were set in every config (--insecure).
 	Insecure bool
+	// ClientCert and ClientKey (--cert, --key) replace monica.yml's
+	// tls.clientCert and tls.clientKey; set both or neither. CACert
+	// (--cacert) replaces tls.caCert. "" keeps the config's.
+	ClientCert, ClientKey, CACert string
+	// Proxy (--proxy) replaces monica.yml's proxy: a proxy URL, or "none"
+	// for no proxy; "" keeps the config's.
+	Proxy string
 	// Transports, when set, is the connection pool HTTP clients use
 	// (shared between runners under monica load); nil gives each project
 	// its own.
@@ -46,4 +54,48 @@ type Opts struct {
 	// CookieJar, when set, keeps cookies between requests (one per VU
 	// under monica load); nil keeps none.
 	CookieJar http.CookieJar
+}
+
+// CheckTransport validates the --cert, --key, --cacert and --proxy
+// options and reads their files, so mistakes fail before anything is sent.
+// Settings from monica.yml are checked when each project is loaded.
+func (o *Opts) CheckTransport() error {
+	switch {
+	case o.ClientCert != "" && o.ClientKey == "":
+		return fmt.Errorf("--cert %s needs --key", o.ClientCert)
+	case o.ClientKey != "" && o.ClientCert == "":
+		return fmt.Errorf("--key %s needs --cert", o.ClientKey)
+	}
+	if o.Proxy != "" {
+		if _, err := config.ParseProxy(o.Proxy); err != nil {
+			return fmt.Errorf("--proxy: %w", err)
+		}
+	}
+	cfg := net.TransportConfig{ClientCert: o.ClientCert, ClientKey: o.ClientKey, CACert: o.CACert}
+	return cfg.Check()
+}
+
+// transportConfig applies the options over a project's settings.
+func (o *Opts) transportConfig(s *config.Resolved) (net.TransportConfig, error) {
+	cfg := net.TransportConfig{
+		InsecureSkipVerify: s.InsecureSkipVerify || o.Insecure,
+		ClientCert:         s.ClientCert,
+		ClientKey:          s.ClientKey,
+		CACert:             s.CACert,
+		Proxy:              s.Proxy,
+	}
+	if o.ClientCert != "" || o.ClientKey != "" {
+		cfg.ClientCert, cfg.ClientKey = o.ClientCert, o.ClientKey
+	}
+	if o.CACert != "" {
+		cfg.CACert = o.CACert
+	}
+	if o.Proxy != "" {
+		p, err := config.ParseProxy(o.Proxy)
+		if err != nil {
+			return cfg, fmt.Errorf("--proxy: %w", err)
+		}
+		cfg.Proxy = p
+	}
+	return cfg, nil
 }
