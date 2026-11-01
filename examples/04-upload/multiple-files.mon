@@ -1,0 +1,32 @@
+# A multipart form with two files and a JSON part.
+
+### Two files and metadata
+# @name uploadMany
+POST {{baseUrl}}/post
+Content-Type: multipart/form-data; boundary=ExampleBoundary
+
+--ExampleBoundary
+Content-Disposition: form-data; name="meta"
+Content-Type: application/json
+
+{"uploadedBy": "{{name}}"}
+--ExampleBoundary
+Content-Disposition: form-data; name="report"; filename="report.csv"
+Content-Type: text/csv
+
+< ./files/report.csv
+--ExampleBoundary
+Content-Disposition: form-data; name="note"; filename="note.txt"
+Content-Type: text/plain
+
+< ./files/note.txt
+--ExampleBoundary--
+
+> {%
+  const echo = res.json();
+  test("both files", () => {
+    expect(echo.files.report).toContain("ada");
+    expect(echo.files.note).toBe("hello from monica\n");
+  });
+  test("json part", () => expect(JSON.parse(echo.form.meta).uploadedBy).toBe(vars.get("name")));
+%}

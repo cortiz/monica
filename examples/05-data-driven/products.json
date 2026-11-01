@@ -1,0 +1,5 @@
+[
+  { "sku": "pen-01", "price": 2.5, "tags": ["office"] },
+  { "sku": "mug-02", "price": 9, "tags": ["kitchen", "gift"] },
+  { "sku": "lamp-03", "price": 24.99, "tags": [] }
+]

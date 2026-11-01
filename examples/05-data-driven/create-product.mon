@@ -1,0 +1,15 @@
+# Data-driven with a JSON file: each object is one row. Numbers and arrays
+# arrive as their JSON text, so they can go straight into a JSON body:
+#   monica run -s 05-data-driven/create-product.mon --data 05-data-driven/products.json
+
+### Create a product per row
+# @name createProduct
+POST {{baseUrl}}/anything/products
+Content-Type: application/json
+
+{"sku": "{{sku}}", "price": {{price}}, "row": {{$randomInt}}}
+
+> {%
+  test("sku echoed", () => expect(res.json().json.sku).toBe(vars.get("sku")));
+  test("price is a number", () => expect(typeof res.json().json.price).toBe("number"));
+%}

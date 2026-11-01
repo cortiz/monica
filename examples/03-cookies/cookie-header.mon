@@ -1,0 +1,7 @@
+# A Cookie header written in the request is sent too (alongside the jar).
+
+### Explicit Cookie header
+GET {{baseUrl}}/cookies
+Cookie: tracking=off
+
+> {% test("sent", () => expect(res.json().cookies.tracking).toBe("off")) %}

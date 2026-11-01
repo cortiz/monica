@@ -1,0 +1,13 @@
+# Scripts kept in .js files, shared between requests.
+
+### First
+< ./scripts/stamp.js
+GET {{baseUrl}}/headers
+
+> ./tests/ok-json.js
+
+### Second, same scripts
+< ./scripts/stamp.js
+GET {{baseUrl}}/anything/second
+
+> ./tests/ok-json.js

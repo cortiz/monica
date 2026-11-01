@@ -1,0 +1,13 @@
+# Values change with --env; defaults fill in what an environment leaves out.
+
+### Which environment am I on?
+# @name whichEnv
+GET {{baseUrl}}/anything/{{apiVersion}}/plans?tier={{tier}}
+
+> {%
+  const echo = res.json();
+  const expected = { "": ["v1", "free"], staging: ["v2", "trial"], prod: ["v2", "paid"] }[monica.env];
+  test("version for " + (monica.env || "defaults"), () => expect(echo.url).toContain("/" + expected[0] + "/"));
+  test("tier", () => expect(echo.args.tier).toBe(expected[1]));
+  test("default header used the variable", () => expect(echo.headers["X-Api-Version"]).toBe(expected[0]));
+%}

@@ -1,0 +1,31 @@
+# The expect() matchers, each also available as expect(x).not.<matcher>.
+
+### Matcher tour
+# @name matchers
+POST {{baseUrl}}/post
+Content-Type: application/json
+
+{"id": 7, "name": "Ada Lovelace", "tags": ["math", "poetry"], "address": {"city": "London"}, "score": 9.5, "nick": null}
+
+> {%
+  const u = res.json().json;
+  test("toBe / toEqual", () => { expect(u.id).toBe(7); expect(u.tags).toEqual(["math", "poetry"]); });
+  test("toContain", () => { expect(u.name).toContain("Love"); expect(u.tags).toContain("poetry"); });
+  test("toMatch", () => expect(u.name).toMatch(/^Ada \w+$/));
+  test("toHaveProperty", () => { expect(u).toHaveProperty("address.city", "London"); expect(u).toHaveProperty("tags.1"); });
+  test("toHaveLength", () => expect(u.tags).toHaveLength(2));
+  test("comparisons", () => { expect(u.score).toBeGreaterThan(9); expect(u.score).toBeLessThanOrEqual(10); });
+  test("null and friends", () => { expect(u.nick).toBeNull(); expect(u.missing).toBeUndefined(); expect(u.name).toBeTruthy(); });
+  test("not", () => { expect(u.id).not.toBe(8); expect(u.tags).not.toContain("chess"); });
+  test("response time", () => expect(res.time).toBeLessThan(10000));
+%}
+
+### Tests on headers and raw text
+# @name rawChecks
+GET {{baseUrl}}/response-headers?Cache-Control=no-store
+
+> {%
+  test("header", () => expect(res.headers.get("Cache-Control")).toBe("no-store"));
+  test("raw body is JSON text", () => expect(res.body.trim().startsWith("{")).toBe(true));
+  console.log("cache header:", res.headers.get("Cache-Control"));
+%}

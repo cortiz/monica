@@ -1,0 +1,17 @@
+# Retries: a failed request (connection error, timeout, failed test) is sent
+# again. An HTTP error status alone is not a failure, so add a test.
+
+### Retry up to 3 times, 200ms apart
+# @name retried
+# @retry 3 200ms
+# @timeout 5s
+GET {{baseUrl}}/status/200
+
+> {% test("not a server error", () => expect(res.status).toBeLessThan(500)) %}
+
+### Poll until a job is done (here it is done at once)
+# @name poll
+# @retry 5 1s
+GET {{baseUrl}}/anything/jobs/1?state=done
+
+> {% test("done", () => expect(res.json().args.state).toBe("done")) %}

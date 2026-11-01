@@ -1,0 +1,32 @@
+# Every HTTP method, plus a status code that is not 2xx. A 4xx/5xx status is
+# not a failure by itself: tests decide.
+
+### Replace (PUT)
+# @name putUser
+PUT {{baseUrl}}/put
+Content-Type: application/json
+
+{"id": 1, "name": "ada"}
+
+> {% test("echoed", () => expect(res.json().json).toEqual({id: 1, name: "ada"})) %}
+
+### Partial update (PATCH)
+# @name patchUser
+PATCH {{baseUrl}}/patch
+Content-Type: application/json
+
+{"name": "ada lovelace"}
+
+> {% test("echoed", () => expect(res.json().json.name).toBe("ada lovelace")) %}
+
+### Delete
+# @name deleteUser
+DELETE {{baseUrl}}/delete?id=1
+
+> {% test("query echoed", () => expect(res.json().args.id).toBe("1")) %}
+
+### A teapot (418) is fine when you expect it
+# @name teapot
+GET {{baseUrl}}/status/418
+
+> {% test("is a teapot", () => expect(res.status).toBe(418)) %}

@@ -1,0 +1,14 @@
+# Skipping: always (@skip), or decided by a script (req.skip). Skipped
+# requests are reported but not counted as failures.
+
+### Not ready yet
+# @skip waiting for the v2 endpoint
+GET {{baseUrl}}/anything/v2
+
+### Only on staging
+< {% if (monica.env !== "staging") req.skip("staging only") %}
+GET {{baseUrl}}/anything/staging-check
+
+### Only when a flag variable is set (monica run --var smoke=1)
+< {% if (!vars.has("smoke")) req.skip("set --var smoke=1 to run") %}
+GET {{baseUrl}}/anything/smoke
