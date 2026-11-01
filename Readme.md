@@ -299,7 +299,10 @@ It reports:
 Variables set at run time can't be known up front, so a variable counts as defined when
 `monica.yml` or `--var` sets it, when it is a column of the `--data` file, or when any script
 of the run (request scripts, the `monica.js` hooks that apply, modules in `scripts.paths`)
-contains `vars.set("name"` with that literal name (`"`, `'` or `` ` `` quotes). Names built at
+contains `vars.set("name"` with that literal name (`"`, `'` or `` ` `` quotes). The setters of
+imported projects count too: `pm.environment.set`, `pm.collectionVariables.set`,
+`pm.variables.set`, `pm.globals.set`, `bru.setVar`, `bru.setEnvVar`, `client.global.set` and
+`request.variables.set`. Names built at
 run time (`vars.set(key, ...)`) are not detected; pass them with `--var` if needed.
 
 It prints one line per problem, then a summary:
