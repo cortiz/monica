@@ -106,8 +106,13 @@ func (o *Options) maxVUs() int {
 	for _, st := range o.Stages {
 		most = math.Max(most, st.Target)
 	}
-	return int(math.Floor(most + 1e-9)) // the ramp rounds down too
+	return vuCount(most)
 }
+
+// vuCount is how many VUs a ramped value means: rounded to the nearest
+// whole VU, so on a ramp from 0 to N, VU i joins once the ramp passes
+// i-0.5 (not only at the very end of the stage, which could race the stop).
+func vuCount(v float64) int { return int(math.Floor(v + 0.5 + 1e-9)) }
 
 // Run runs the load test until its duration, stages or iterations are
 // done, ctx is done, or a VU hits an input error (unreadable file, invalid
@@ -219,7 +224,7 @@ func (t *test) runFixed() {
 func (t *test) runRamping(start time.Time) {
 	segs := segments(float64(t.opts.VUs), t.opts.Stages)
 	g := newGauge()
-	update := func() { g.set(int(math.Floor(valueAt(segs, time.Since(start)) + 1e-9))) }
+	update := func() { g.set(vuCount(valueAt(segs, time.Since(start)))) }
 	update()
 	t.wg.Add(1)
 	go func() {

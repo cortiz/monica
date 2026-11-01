@@ -143,8 +143,9 @@ phases (avg / p95)  dns 0 / 0 · connect 95µs / 410µs · tls 0 / 0 · waiting 
   per VU, before its first iteration, and `afterAll` when it stops.
 * **Modes** — by default `--vus` VUs loop over the files. `--stage duration:target`
   (repeatable, or `load.stages`) ramps the VU count linearly to each target in turn,
-  starting from `--vus` (default 0); a VU above the current count finishes its iteration and
-  waits, and VUs are only started once the ramp reaches them. The stages' total is the test's
+  starting from `--vus` (default 0). The count is rounded to the nearest VU (on a ramp from
+  0 to 10 over 10s, VU 1 joins at 0.5s); a VU above the current count finishes its iteration
+  and waits, and VUs are only started once the ramp reaches them. The stages' total is the test's
   duration. `--rate` (or `load.rate`: `100`, `100/s`, `6000/m`, `90/h`, `1/500ms`) starts
   iterations on a fixed schedule instead, however long each takes, on up to `--vus` VUs
   (default 100; created as needed). An iteration due while every VU is busy is dropped and

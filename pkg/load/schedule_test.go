@@ -100,3 +100,17 @@ func TestArrivals(t *testing.T) {
 		}
 	})
 }
+
+func TestVUCount(t *testing.T) {
+	tests := []struct {
+		v    float64
+		want int
+	}{
+		{0, 0}, {0.49, 0}, {0.5, 1}, {1, 1}, {1.49, 1}, {2.5, 3}, {9.6, 10},
+	}
+	for _, tt := range tests {
+		if got := vuCount(tt.v); got != tt.want {
+			t.Errorf("vuCount(%g) = %d, want %d", tt.v, got, tt.want)
+		}
+	}
+}
