@@ -3,9 +3,12 @@ package curl
 import (
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // cmdStyle matches the marks of a Windows cmd command line: "^" line
@@ -192,11 +195,16 @@ func ansiC(r []rune) (string, int, error) {
 				b.WriteRune(e)
 				continue
 			}
-			v, _ := strconv.ParseUint(string(r[i+1:j]), 16, 32)
 			if e == 'x' {
-				b.WriteByte(byte(v))
+				v, _ := strconv.ParseUint(string(r[i+1:j]), 16, 8) // at most 2 hex digits
+				b.WriteByte(uint8(v))
 			} else {
-				b.WriteRune(rune(v))
+				v, _ := strconv.ParseUint(string(r[i+1:j]), 16, 32)
+				if v <= unicode.MaxRune {
+					b.WriteRune(rune(v))
+				} else {
+					b.WriteRune(utf8.RuneError) // like bash, which prints nothing useful either
+				}
 			}
 			i = j - 1
 		case '0', '1', '2', '3', '4', '5', '6', '7':
@@ -204,8 +212,11 @@ func ansiC(r []rune) (string, int, error) {
 			for j < len(r) && j-i < 3 && r[j] >= '0' && r[j] <= '7' {
 				j++
 			}
-			v, _ := strconv.ParseUint(string(r[i:j]), 8, 8)
-			b.WriteByte(byte(v))
+			v, _ := strconv.ParseUint(string(r[i:j]), 8, 16) // up to \777
+			v &= 0xFF                                        // bash keeps the low byte
+			if v <= math.MaxUint8 {
+				b.WriteByte(uint8(v))
+			}
 			i = j - 1
 		default:
 			b.WriteRune('\\')
