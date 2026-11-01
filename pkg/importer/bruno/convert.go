@@ -283,7 +283,8 @@ func (cv *converter) request(f *File, src, file string, inherited auth, folderHe
 	for _, h := range f.Block("headers").Enabled() {
 		r.Headers = append(r.Headers, importer.Header{Name: h.Key, Value: cv.text(h.Value, src)})
 	}
-	for _, h := range folderHeaders {
+	for i := len(folderHeaders) - 1; i >= 0; i-- { // innermost folder first: it wins
+		h := folderHeaders[i]
 		if !hasHeader(r.Headers, h.Key) {
 			r.Headers = append(r.Headers, importer.Header{Name: h.Key, Value: cv.text(h.Value, src)})
 		}
@@ -413,7 +414,7 @@ func (cv *converter) url(raw string, f *File, src string) string {
 	if !strings.Contains(raw, "://") && !strings.HasPrefix(raw, "{{") {
 		raw = "http://" + raw
 	}
-	return cv.text(strings.ReplaceAll(raw, " ", "%20"), src)
+	return cv.text(importer.EscapeSpaces(raw), src)
 }
 
 var processEnvRe = regexp.MustCompile(`{{\s*process\.env\.([A-Za-z_][A-Za-z0-9_]*)\s*}}`)
@@ -578,10 +579,13 @@ func (cv *converter) formFile(p, src, file string) string {
 		return clean
 	}
 	full := filepath.Join(cv.src, filepath.FromSlash(clean))
-	if fi, err := os.Stat(full); err != nil || fi.Size() > maxCopy {
-		cv.p.Addf("%s: file %s was not copied (missing or larger than 10 MB); put it at %s", src, p, clean)
-	} else if data, err := os.ReadFile(full); err == nil {
-		cv.p.Extra[clean] = string(data)
+	switch reason := cv.copyable(clean, full); {
+	case reason != "":
+		cv.p.Addf("%s: file %s was not copied (%s); put it at %s", src, p, reason, clean)
+	default:
+		if data, err := os.ReadFile(full); err == nil {
+			cv.p.Extra[clean] = string(data)
+		}
 	}
 	rel, err := filepath.Rel(filepath.FromSlash(path.Dir(file)), filepath.FromSlash(clean))
 	if err != nil {
@@ -592,6 +596,34 @@ func (cv *converter) formFile(p, src, file string) string {
 		rel = "./" + rel
 	}
 	return rel
+}
+
+// copyable says why a form file must not be copied into the project ("" if
+// it may): hidden files (.env, .ssh/...) and symbolic links are left out so
+// an import can't carry secrets or files from outside the collection.
+func (cv *converter) copyable(clean, full string) string {
+	for _, part := range strings.Split(clean, "/") {
+		if strings.HasPrefix(part, ".") {
+			return "hidden files are not copied"
+		}
+	}
+	fi, err := os.Lstat(full)
+	switch {
+	case err != nil:
+		return "missing"
+	case fi.Mode()&os.ModeSymlink != 0:
+		return "symbolic links are not copied"
+	case !fi.Mode().IsRegular():
+		return "not a regular file"
+	case fi.Size() > maxCopy:
+		return "larger than 10 MB"
+	}
+	root, err1 := filepath.EvalSymlinks(cv.src)
+	real, err2 := filepath.EvalSymlinks(full)
+	if err1 != nil || err2 != nil || (real != root && !strings.HasPrefix(real, root+string(filepath.Separator))) {
+		return "outside the collection"
+	}
+	return ""
 }
 
 func formEscape(s string) string {
@@ -675,7 +707,7 @@ func assertion(op, arg string) (string, bool) {
 	case "isUndefined":
 		return ".to.be.undefined", true
 	case "isDefined":
-		return ".to.exist", true
+		return ".to.not.be.undefined", true
 	case "isTruthy":
 		return ".to.be.ok", true
 	case "isFalsy":

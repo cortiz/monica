@@ -55,6 +55,7 @@ type URL struct {
 	Raw      string
 	Protocol string
 	Host     []string
+	Port     string
 	Path     []string
 	Query    []KV
 	Variable []KV
@@ -72,6 +73,7 @@ func (u *URL) UnmarshalJSON(b []byte) error {
 		Raw      string          `json:"raw"`
 		Protocol string          `json:"protocol"`
 		Host     json.RawMessage `json:"host"`
+		Port     flexValue       `json:"port"`
 		Path     json.RawMessage `json:"path"`
 		Query    []KV            `json:"query"`
 		Variable []KV            `json:"variable"`
@@ -80,7 +82,7 @@ func (u *URL) UnmarshalJSON(b []byte) error {
 		return fmt.Errorf("url: %w", err)
 	}
 	u.object = true
-	u.Raw, u.Protocol, u.Query, u.Variable = o.Raw, o.Protocol, o.Query, o.Variable
+	u.Raw, u.Protocol, u.Query, u.Variable, u.Port = o.Raw, o.Protocol, o.Query, o.Variable, o.Port.String()
 	u.Host = stringList(o.Host, ".")
 	u.Path = stringList(o.Path, "/")
 	return nil
