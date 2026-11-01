@@ -31,6 +31,14 @@ type Request struct {
 	// "< path" body instead.
 	Body     string
 	BodyFile string
+	// PreScript and PostScript are JavaScript written as "< {% %}" and
+	// "> {% %}" blocks; PreScriptFile and PostScriptFile (".js" paths)
+	// reference script files instead.
+	PreScript, PostScript         string
+	PreScriptFile, PostScriptFile string
+	// Skip writes "# @skip" with SkipReason.
+	Skip       bool
+	SkipReason string
 }
 
 var (
@@ -64,6 +72,15 @@ func WriteMon(w io.Writer, reqs []Request) error {
 		if r.Timeout > 0 {
 			b.WriteString("# @timeout " + r.Timeout.String() + "\n")
 		}
+		if r.Skip {
+			b.WriteString(strings.TrimRight("# @skip "+r.SkipReason, " ") + "\n")
+		}
+		switch {
+		case r.PreScriptFile != "":
+			b.WriteString("< " + r.PreScriptFile + "\n")
+		case r.PreScript != "":
+			b.WriteString("< {%\n" + strings.TrimRight(r.PreScript, "\n") + "\n%}\n")
+		}
 		b.WriteString(r.Method + " " + r.URL + "\n")
 		for _, h := range r.Headers {
 			b.WriteString(h.Name + ": " + h.Value + "\n")
@@ -73,18 +90,47 @@ func WriteMon(w io.Writer, reqs []Request) error {
 			b.WriteString("\n< " + r.BodyFile + "\n")
 		case r.Body != "":
 			b.WriteString("\n" + r.Body)
-			if i < len(reqs)-1 && !strings.HasSuffix(r.Body, "\n") {
+			if (i < len(reqs)-1 || r.hasPost()) && !strings.HasSuffix(r.Body, "\n") {
 				b.WriteString("\n")
 			}
+		}
+		switch {
+		case r.PostScriptFile != "":
+			b.WriteString("\n> " + r.PostScriptFile + "\n")
+		case r.PostScript != "":
+			b.WriteString("\n> {%\n" + strings.TrimRight(r.PostScript, "\n") + "\n%}\n")
 		}
 	}
 	_, err := io.WriteString(w, b.String())
 	return err
 }
 
+// CheckRequest reports what WriteMon could not write for r as the only
+// (or last) request of a file.
+func CheckRequest(r Request) error { return check(r, true) }
+
+func (r Request) hasPost() bool { return r.PostScript != "" || r.PostScriptFile != "" }
+
 // check reports what WriteMon cannot write for r; last is set for the
 // file's last request.
 func check(r Request, last bool) error {
+	for _, sc := range []struct{ code, file, what string }{
+		{r.PreScript, r.PreScriptFile, "pre-request"},
+		{r.PostScript, r.PostScriptFile, "post-response"},
+	} {
+		if strings.Contains(sc.code, "%}") {
+			return fmt.Errorf("the %s script contains %%}, which would end its block (write it to a .js file)", sc.what)
+		}
+		if sc.file != "" && (!strings.HasSuffix(sc.file, ".js") || strings.ContainsAny(sc.file, " \t\r\n")) {
+			return fmt.Errorf("%s script file %q must be a .js path without spaces", sc.what, sc.file)
+		}
+	}
+	if strings.ContainsAny(r.SkipReason, "\r\n") {
+		return fmt.Errorf("skip reason contains a line break")
+	}
+	if r.hasPost() {
+		last = false // a post-response script also drops the body's trailing blank lines
+	}
 	if !methodRe.MatchString(r.Method) {
 		return fmt.Errorf("invalid method %q", r.Method)
 	}
