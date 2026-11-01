@@ -1,6 +1,7 @@
 package httpfile
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -343,6 +344,55 @@ func TestConvertErrors(t *testing.T) {
 	for _, tt := range tests {
 		if _, err := Convert(tt.src); err == nil || !strings.Contains(err.Error(), tt.want) {
 			t.Errorf("Convert(%s) = %v, want %q", tt.src, err, tt.want)
+		}
+	}
+}
+
+// TestSymlinksNotRead: a folder may hold symbolic links to any file
+// (~/.ssh/id_rsa); neither .http files nor env/settings files that are
+// links are read, so their content can't end up in the project.
+func TestSymlinksNotRead(t *testing.T) {
+	secret := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(secret, []byte("GET https://TOPSECRET.example/\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "ok.http"), []byte("GET https://h.example/\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".vscode"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, link := range []string{"evil.http", envFile, privateEnvFile, filepath.Join(".vscode", "settings.json")} {
+		if err := os.Symlink(secret, filepath.Join(dir, link)); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+	}
+	p, err := Convert(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := t.TempDir()
+	if _, err := importer.WriteProject(out, p, false); err != nil {
+		t.Fatal(err)
+	}
+	err = filepath.WalkDir(out, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err == nil && strings.Contains(string(data), "TOPSECRET") {
+			t.Errorf("%s holds content of a symlinked file:\n%s", path, data)
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := strings.Join(p.Report, "\n")
+	for _, want := range []string{"evil.http: symbolic link, not imported", envFile + ": not a regular file", privateEnvFile + ": not a regular file"} {
+		if !strings.Contains(report, want) {
+			t.Errorf("report misses %q:\n%s", want, report)
 		}
 	}
 }

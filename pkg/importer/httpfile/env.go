@@ -74,8 +74,8 @@ func (cv *converter) loadEnvs(envDirs []string) error {
 	for _, dir := range envDirs {
 		for _, name := range []string{envFile, privateEnvFile} {
 			full := filepath.Join(dir, name)
-			data, err := os.ReadFile(full) //nolint:gosec // env files of the imported project
-			if os.IsNotExist(err) {
+			data, err := cv.readRegular(full)
+			if data == nil && err == nil {
 				continue
 			}
 			if err != nil {
@@ -91,8 +91,8 @@ func (cv *converter) loadEnvs(envDirs []string) error {
 	}
 	for _, dir := range searchDirs(cv.root) {
 		full := filepath.Join(dir, ".vscode", "settings.json")
-		data, err := os.ReadFile(full) //nolint:gosec // VS Code settings of the imported project
-		if os.IsNotExist(err) {
+		data, err := cv.readRegular(full)
+		if data == nil && err == nil {
 			continue
 		}
 		if err != nil {
@@ -104,6 +104,29 @@ func (cv *converter) loadEnvs(envDirs []string) error {
 		break
 	}
 	return nil
+}
+
+// readRegular reads an env or settings file. A missing file gives nil, nil;
+// so does a symbolic link or other non-regular file, which is reported
+// instead of read (it could point at any file, whose content would end up
+// in monica.yml or in error messages).
+func (cv *converter) readRegular(full string) ([]byte, error) {
+	fi, err := os.Lstat(full)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !fi.Mode().IsRegular() {
+		cv.p.Addf("%s: not a regular file (symbolic link?), not read", cv.display(full))
+		return nil, nil
+	}
+	data, err := os.ReadFile(full) //nolint:gosec // env/settings files of the imported project
+	if err == nil && data == nil {
+		data = []byte{}
+	}
+	return data, err
 }
 
 // display names a file for the report: relative to the import's root

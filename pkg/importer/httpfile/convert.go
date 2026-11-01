@@ -81,6 +81,12 @@ func Convert(src string) (*importer.Project, error) {
 			}
 			if ext := strings.ToLower(filepath.Ext(name)); ext == ".http" || ext == ".rest" {
 				rel, _ := filepath.Rel(abs, p)
+				if d.Type()&fs.ModeSymlink != 0 {
+					// It could point anywhere (~/.ssh/...); its text would
+					// end up in the generated files.
+					cv.p.Addf("%s: symbolic link, not imported", filepath.ToSlash(rel))
+					return nil
+				}
 				files = append(files, filepath.ToSlash(rel))
 			}
 			return nil
