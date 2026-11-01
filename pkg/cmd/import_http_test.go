@@ -56,8 +56,8 @@ func httpFileServer(t *testing.T) (*httptest.Server, func() []string) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		bearer := r.Header.Get("Authorization") == "Bearer tok-1"
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		switch {
-		case r.URL.Path == "/login":
+		switch r.URL.Path {
+		case "/login":
 			var in struct{ User, Password string }
 			_ = json.NewDecoder(r.Body).Decode(&in)
 			if in.User != "ada" || in.Password != "pw" {
@@ -66,7 +66,7 @@ func httpFileServer(t *testing.T) (*httptest.Server, func() []string) {
 			}
 			w.Header().Set("X-Session", "s-9")
 			_, _ = io.WriteString(w, `{"token":"tok-1"}`)
-		case r.URL.Path == "/v1/products":
+		case "/v1/products":
 			q := r.URL.Query()
 			if !bearer || r.Header.Get("X-Api-Key") != "k-123" || q.Get("limit") != "2" || q.Get("currency") != "EUR" {
 				reject(w, r, "bad products query")
@@ -77,7 +77,7 @@ func httpFileServer(t *testing.T) (*httptest.Server, func() []string) {
 				return
 			}
 			_, _ = io.WriteString(w, `{"items":[{"name":"Pen"},{"name":"Mug"}]}`)
-		case r.URL.Path == "/orders":
+		case "/orders":
 			var in struct {
 				Product int
 				User    *string
@@ -93,7 +93,7 @@ func httpFileServer(t *testing.T) (*httptest.Server, func() []string) {
 			w.Header().Add("X-Tag", "b")
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": 1, "ref": ref})
-		case r.URL.Path == "/orders/1/invoice":
+		case "/orders/1/invoice":
 			f, _, err := r.FormFile("file")
 			if !bearer || err != nil || r.FormValue("note") != "paid" {
 				reject(w, r, "bad invoice upload")
@@ -101,7 +101,7 @@ func httpFileServer(t *testing.T) (*httptest.Server, func() []string) {
 			}
 			data, _ := io.ReadAll(f)
 			_ = json.NewEncoder(w).Encode(map[string]int{"size": len(data)})
-		case r.URL.Path == "/dynamic":
+		case "/dynamic":
 			if id := r.URL.Query().Get("id"); id != "" && !checks["X-Uuid"].MatchString(id) {
 				reject(w, r, "bad id "+id)
 				return

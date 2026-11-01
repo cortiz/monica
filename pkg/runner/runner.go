@@ -539,7 +539,10 @@ func (r *Runner) project(file string) (*project, error) {
 	secrets := append(append([]string(nil), settings.Secrets...), config.ProxySecrets(tc.Proxy)...)
 	mask := newMasker(secrets)
 	if tc.Proxy != "" {
-		logging.Log.Debug().Msg(mask.String("Using proxy " + config.RedactProxy(tc.Proxy)))
+		// RedactProxy hides the whole user info; the masker is not used
+		// here, so no credential flows into the log (CodeQL
+		// go/clear-text-logging).
+		logging.Log.Debug().Msg("Using proxy " + config.RedactProxy(tc.Proxy))
 	}
 	// Certificate files are read here, once per transport, before any
 	// request of the project is sent.
