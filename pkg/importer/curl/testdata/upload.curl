@@ -1,0 +1,1 @@
+curl -T ./payload.bin https://up.example.com/files/a.bin -H 'X-Trace: 1'

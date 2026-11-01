@@ -1,0 +1,1 @@
+curl -XPATCH https://api.example.com/users/7 -H Content-Type:application/json --data-binary @user.json

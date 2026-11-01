@@ -1,0 +1,4 @@
+POST https://api.example.com/login
+Content-Type: application/x-www-form-urlencoded
+
+user=ada&pass=s3cret

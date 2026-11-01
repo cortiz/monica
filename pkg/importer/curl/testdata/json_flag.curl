@@ -1,0 +1,1 @@
+curl --json '{"id": 1}' -m 5 -u ada:pw https://api.example.com/items

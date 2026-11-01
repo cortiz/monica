@@ -1,0 +1,4 @@
+PATCH https://api.example.com/users/7
+Content-Type: application/json
+
+< user.json

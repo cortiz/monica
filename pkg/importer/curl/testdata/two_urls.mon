@@ -1,0 +1,6 @@
+HEAD https://a.example.com
+User-Agent: monica-test
+
+###
+HEAD https://b.example.com/health
+User-Agent: monica-test

@@ -1,0 +1,4 @@
+PUT https://up.example.com/files/a.bin
+X-Trace: 1
+
+< ./payload.bin
