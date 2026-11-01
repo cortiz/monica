@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 
 	"jmpeax.com/sec/monica/pkg/load"
 	"jmpeax.com/sec/monica/pkg/report"
@@ -136,7 +136,7 @@ func New(b Backend, opts Options) *Model {
 		backend: b, opts: opts,
 		results: map[string]report.Request{},
 		width:   100, height: 30,
-		resp: viewport.New(60, 10),
+		resp: viewport.New(viewport.WithWidth(60), viewport.WithHeight(10)),
 		spin: spinner.New(spinner.WithSpinner(spinner.MiniDot)),
 		now:  time.Now,
 	}
@@ -145,9 +145,10 @@ func New(b Backend, opts Options) *Model {
 	return m
 }
 
-// Init implements tea.Model.
+// Init implements tea.Model. It asks the terminal for its background
+// color, to pick light or dark colors (see setTheme).
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(m.spin.Tick, m.statCmd())
+	return tea.Batch(m.spin.Tick, m.statCmd(), tea.RequestBackgroundColor)
 }
 
 // Messages produced by commands.
@@ -182,9 +183,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spin, cmd = m.spin.Update(msg)
 		return m, cmd
-	case tea.KeyMsg:
+	case tea.BackgroundColorMsg:
+		setTheme(msg.IsDark())
+		m.refreshResponse()
+		return m, nil
+	case tea.KeyPressMsg:
 		return m, m.key(msg)
-	case tea.MouseMsg:
+	case tea.MouseWheelMsg:
 		if m.focus == focusResponse {
 			var cmd tea.Cmd
 			m.resp, cmd = m.resp.Update(msg)
@@ -254,8 +259,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // key handles a key press.
-func (m *Model) key(k tea.KeyMsg) tea.Cmd {
+func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 	s := k.String()
+	if s == "space" {
+		s = " "
+	}
 	if s == "ctrl+c" {
 		return m.quit()
 	}

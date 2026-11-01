@@ -377,8 +377,8 @@ More: [tests tab](docs/images/tui/2-tests.png) · [variables](docs/images/tui/3-
 | `-e, --env <name>` | Environment to start with (default `$MONICA_ENV`) |
 | `--var name=value`, `-c, --config`, `-k, --insecure`, `--no-cookies` | As for `monica run` |
 
-A terminal that doesn't answer the color query (some multiplexers or serial consoles) can
-delay the first screen by a few seconds.
+Colors follow the terminal's light or dark background (asked when the TUI starts; other
+commands never query the terminal).
 
 ## Scripting
 

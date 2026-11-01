@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"image/color"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
 
 	"jmpeax.com/sec/monica/pkg/load"
 	"jmpeax.com/sec/monica/pkg/net"
@@ -72,7 +73,7 @@ func (f *fakeBackend) Close() error { return nil }
 
 func itoa(n int) string { return strconv.Itoa(n) }
 
-var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+var ansiRe = regexp.MustCompile(`\x1b\[[0-9;:]*m|\x1b\]8;[^\x1b]*\x1b\\`)
 
 func stripANSI(s string) string { return ansiRe.ReplaceAllString(s, "") }
 
@@ -106,29 +107,32 @@ func newModel(t *testing.T, b Backend, files []string) *Model {
 func press(m *Model, keys ...string) tea.Cmd {
 	var last tea.Cmd
 	for _, k := range keys {
-		var msg tea.KeyMsg
+		var msg tea.KeyPressMsg
 		switch k {
 		case "enter":
-			msg = tea.KeyMsg{Type: tea.KeyEnter}
+			msg = tea.KeyPressMsg{Code: tea.KeyEnter}
 		case "down":
-			msg = tea.KeyMsg{Type: tea.KeyDown}
+			msg = tea.KeyPressMsg{Code: tea.KeyDown}
 		case "up":
-			msg = tea.KeyMsg{Type: tea.KeyUp}
+			msg = tea.KeyPressMsg{Code: tea.KeyUp}
 		case "left":
-			msg = tea.KeyMsg{Type: tea.KeyLeft}
+			msg = tea.KeyPressMsg{Code: tea.KeyLeft}
 		case "esc":
-			msg = tea.KeyMsg{Type: tea.KeyEsc}
+			msg = tea.KeyPressMsg{Code: tea.KeyEscape}
 		case "tab":
-			msg = tea.KeyMsg{Type: tea.KeyTab}
+			msg = tea.KeyPressMsg{Code: tea.KeyTab}
 		case "space":
-			msg = tea.KeyMsg{Type: tea.KeySpace, Runes: []rune(" ")}
+			msg = tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
 		default:
-			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
+			msg = tea.KeyPressMsg{Code: []rune(k)[0], Text: k}
 		}
 		_, last = m.Update(msg)
 	}
 	return last
 }
+
+// screen is the rendered UI as plain text.
+func screen(m *Model) string { return stripANSI(m.View().Content) }
 
 // run executes cmd (and batches) and feeds the messages back, except
 // spinner ticks and quit.
@@ -163,7 +167,7 @@ func TestTreeAndSelection(t *testing.T) {
 	if strings.Join(rows, "|") != strings.Join(want, "|") {
 		t.Fatalf("rows = %q\nwant  %q", rows, want)
 	}
-	view := m.View()
+	view := screen(m)
 	for _, s := range []string{"▾ api/", "list", "Create", "broken.mon !", "Select a request"} {
 		if !strings.Contains(view, s) {
 			t.Errorf("view lacks %q:\n%s", s, view)
@@ -174,7 +178,7 @@ func TestTreeAndSelection(t *testing.T) {
 	if n := m.selected(); n.name != "Create" {
 		t.Fatalf("selected %q", n.name)
 	}
-	if v := m.View(); !strings.Contains(v, `{"name": "ada"}`) || !strings.Contains(v, "users.mon:6") {
+	if v := screen(m); !strings.Contains(v, `{"name": "ada"}`) || !strings.Contains(v, "users.mon:6") {
 		t.Errorf("request pane:\n%s", v)
 	}
 	// Folding: left on a request goes to its file, left again folds it.
@@ -188,7 +192,7 @@ func TestTreeAndSelection(t *testing.T) {
 	}
 	// A broken file shows its parse error.
 	press(m, "G")
-	if v := m.View(); !strings.Contains(v, "invalid") && !strings.Contains(v, "NOT A REQUEST") {
+	if v := screen(m); !strings.Contains(v, "invalid") && !strings.Contains(v, "NOT A REQUEST") {
 		t.Errorf("parse error not shown:\n%s", v)
 	}
 }
@@ -208,7 +212,7 @@ func TestSendShowsResponseTabs(t *testing.T) {
 	if strings.Join(fb.sends, ",") != "users.mon:3" {
 		t.Fatalf("sends = %v", fb.sends)
 	}
-	v := m.View()
+	v := screen(m)
 	for _, s := range []string{"✗ list  200 OK · 42ms · 1/2 tests", `"users": [`, `"name": "ada"`, "1 sent"} {
 		if !strings.Contains(v, s) {
 			t.Errorf("view lacks %q:\n%s", s, v)
@@ -226,7 +230,7 @@ func TestSendShowsResponseTabs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		press(m, tt.key)
-		v := m.View()
+		v := screen(m)
 		for _, s := range tt.want {
 			if !strings.Contains(v, s) {
 				t.Errorf("tab %s lacks %q:\n%s", tt.key, s, v)
@@ -234,8 +238,8 @@ func TestSendShowsResponseTabs(t *testing.T) {
 		}
 	}
 	// The tree marks the request as failed; moving away and back keeps the result.
-	if !strings.Contains(m.View(), "✗ GET  list") {
-		t.Errorf("tree mark missing:\n%s", m.View())
+	if !strings.Contains(screen(m), "✗ GET  list") {
+		t.Errorf("tree mark missing:\n%s", screen(m))
 	}
 	press(m, "down", "up")
 	if m.shown == nil || m.shown.Name != "list" {
@@ -280,12 +284,12 @@ func TestEnvPicker(t *testing.T) {
 	if m.overlay != overlayEnv || m.envCursor != 2 {
 		t.Fatalf("overlay %v cursor %d", m.overlay, m.envCursor)
 	}
-	if v := m.View(); !strings.Contains(v, "(defaults)") || !strings.Contains(v, "dev  (current)") {
+	if v := screen(m); !strings.Contains(v, "(defaults)") || !strings.Contains(v, "dev  (current)") {
 		t.Errorf("env overlay:\n%s", v)
 	}
 	run(t, m, press(m, "down", "enter"))
-	if fb.env != "prod" || m.overlay != overlayNone || len(m.results) != 0 || !strings.Contains(m.View(), "env prod") {
-		t.Errorf("env = %q, overlay %v, results %d\n%s", fb.env, m.overlay, len(m.results), m.View())
+	if fb.env != "prod" || m.overlay != overlayNone || len(m.results) != 0 || !strings.Contains(screen(m), "env prod") {
+		t.Errorf("env = %q, overlay %v, results %d\n%s", fb.env, m.overlay, len(m.results), screen(m))
 	}
 	press(m, "e")
 	run(t, m, press(m, "up", "up", "enter")) // "broken"
@@ -318,7 +322,7 @@ func TestVariablesPanel(t *testing.T) {
 	m := newModel(t, fb, files)
 	press(m, "down", "down")
 	run(t, m, press(m, "v"))
-	v := m.View()
+	v := screen(m)
 	for _, s := range []string{"Variables", "users.mon", "baseUrl = https://h", "token   = ****", "(config)"} {
 		if !strings.Contains(v, s) {
 			t.Errorf("vars overlay lacks %q:\n%s", s, v)
@@ -343,7 +347,7 @@ func TestHistory(t *testing.T) {
 	press(m, "down")
 	run(t, m, press(m, "enter"))
 	press(m, "H")
-	v := m.View()
+	v := screen(m)
 	if i, j := strings.Index(v, "Create  201"), strings.Index(v, "list  200"); i < 0 || j < 0 || i > j {
 		t.Errorf("history not newest first:\n%s", v)
 	}
@@ -399,7 +403,7 @@ func TestLoadDashboard(t *testing.T) {
 	}
 	// First message: the progress tick.
 	_, next := m.Update(cmd())
-	v := m.View()
+	v := screen(m)
 	for _, s := range []string{"Load test", "users.mon", "3 active / 4 started", "24 · 4.8 rps", "18ms", "1 (4.17%)", "rps ", "load test running"} {
 		if !strings.Contains(v, s) {
 			t.Errorf("dashboard lacks %q:\n%s", s, v)
@@ -410,8 +414,8 @@ func TestLoadDashboard(t *testing.T) {
 	}
 	close(release)
 	run(t, m, next)
-	if m.load.running || !strings.Contains(m.View(), "requests 48") {
-		t.Errorf("summary not shown:\n%s", m.View())
+	if m.load.running || !strings.Contains(screen(m), "requests 48") {
+		t.Errorf("summary not shown:\n%s", screen(m))
 	}
 	press(m, "esc")
 	if m.overlay != overlayNone {
@@ -430,15 +434,15 @@ func TestLoadStopAndErrors(t *testing.T) {
 	cmd := press(m, "L")
 	press(m, "esc") // stops the running test
 	run(t, m, cmd)
-	if m.load.running || !strings.Contains(m.View(), "stopped summary") {
-		t.Errorf("after stop:\n%s", m.View())
+	if m.load.running || !strings.Contains(screen(m), "stopped summary") {
+		t.Errorf("after stop:\n%s", screen(m))
 	}
 
 	fb.loadRun = func(context.Context, func(load.Progress)) (string, error) { return "", errors.New("no load settings") }
 	press(m, "esc")
 	run(t, m, press(m, "L"))
-	if !strings.Contains(m.View(), "no load settings") {
-		t.Errorf("error not shown:\n%s", m.View())
+	if !strings.Contains(screen(m), "no load settings") {
+		t.Errorf("error not shown:\n%s", screen(m))
 	}
 }
 
@@ -469,8 +473,8 @@ func TestQuitAndHelp(t *testing.T) {
 	_, files := project(t)
 	m := newModel(t, &fakeBackend{}, files)
 	press(m, "?")
-	if !strings.Contains(m.View(), "load-test the selected file") {
-		t.Errorf("help:\n%s", m.View())
+	if !strings.Contains(screen(m), "load-test the selected file") {
+		t.Errorf("help:\n%s", screen(m))
 	}
 	press(m, "esc")
 	if cmd := press(m, "q"); cmd == nil || cmd() != tea.Quit() {
@@ -498,5 +502,21 @@ func TestPrettyBody(t *testing.T) {
 				t.Errorf("highlight changes the text: %q", stripANSI(colored))
 			}
 		}
+	}
+}
+
+func TestViewModesAndTheme(t *testing.T) {
+	_, files := project(t)
+	m := newModel(t, &fakeBackend{}, files)
+	v := m.View()
+	if !v.AltScreen || v.MouseMode != tea.MouseModeCellMotion {
+		t.Errorf("view: alt screen %v, mouse mode %v", v.AltScreen, v.MouseMode)
+	}
+	t.Cleanup(func() { setTheme(true) })
+	dark := v.Content
+	m.Update(tea.BackgroundColorMsg{Color: color.White})
+	light := m.View().Content
+	if light == dark || stripANSI(light) != stripANSI(dark) {
+		t.Error("a light background should change colors only")
 	}
 }

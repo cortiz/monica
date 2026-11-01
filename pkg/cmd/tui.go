@@ -4,7 +4,7 @@ import (
 	"errors"
 	"os"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 	"jmpeax.com/sec/monica/internal/config"
 	"jmpeax.com/sec/monica/internal/logging"
@@ -91,8 +91,8 @@ func runTUI(cmd *cobra.Command, _ []string) error {
 	logging.SetOutput(logs)
 	defer logging.Reset()
 
+	// The model's View asks for the alternate screen and mouse wheel events.
 	p := tea.NewProgram(tui.New(sess, tui.Options{Files: files, Log: logs}),
-		tea.WithAltScreen(), tea.WithMouseCellMotion(),
 		tea.WithInput(cmd.InOrStdin()), tea.WithOutput(cmd.OutOrStdout()))
 	_, err = p.Run()
 	if cerr := sess.Close(); err == nil && cerr != nil {
