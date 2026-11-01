@@ -1,0 +1,21 @@
+### Upload
+POST http://example.com/upload
+Content-Type: multipart/form-data; boundary=MonicaBoundary
+
+--MonicaBoundary
+Content-Disposition: form-data; name="title"
+
+Users for {{env}}
+--MonicaBoundary
+Content-Disposition: form-data; name="file"; filename="users.csv"
+Content-Type: text/csv
+
+< ./payloads/users.csv
+--MonicaBoundary--
+
+### Not multipart: sent as written
+POST http://example.com/raw
+Content-Type: text/plain
+
+--MonicaBoundary
+< ./payloads/users.csv

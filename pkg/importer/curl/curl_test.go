@@ -41,11 +41,15 @@ func TestGolden(t *testing.T) {
 			if buf.String() != string(want) {
 				t.Errorf("got:\n%s\nwant:\n%s", buf.String(), want)
 			}
-			// Body files are read at parse time: give them stand-ins.
+			// Body and multipart files are read at parse time: give them stand-ins.
 			dir := t.TempDir()
-			for _, r := range res.Requests {
-				if r.BodyFile != "" {
-					if err := os.WriteFile(filepath.Join(dir, r.BodyFile), []byte("x"), 0o600); err != nil {
+			for _, line := range strings.Split(buf.String(), "\n") {
+				if path, ok := strings.CutPrefix(line, "< "); ok {
+					path = filepath.Join(dir, path)
+					if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -215,7 +219,9 @@ func TestParseErrors(t *testing.T) {
 		{"bad scheme", []string{"ftp://h/x"}, "unsupported URL scheme"},
 		{"bad header", []string{"https://h", "-H", "nocolon"}, "invalid header"},
 		{"header file", []string{"https://h", "-H", "@headers.txt"}, "reads headers from a file"},
-		{"form", []string{"https://h", "-F", "a=1"}, "not supported yet"},
+		{"form and data", []string{"https://h", "-F", "a=1", "-d", "x"}, "cannot be combined"},
+		{"form without =", []string{"https://h", "-F", "a"}, "invalid -F"},
+		{"form stdin", []string{"https://h", "-F", "a=@-"}, "stdin"},
 		{"bad max-time", []string{"https://h", "-m", "soon"}, "invalid -m"},
 		{"file with other data", []string{"https://h", "-d", "@a", "-d", "b"}, "cannot be combined"},
 		{"stdin data", []string{"https://h", "-d", "@-"}, "stdin"},

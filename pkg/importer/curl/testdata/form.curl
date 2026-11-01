@@ -1,0 +1,7 @@
+curl https://up.example.com/upload \
+  -H 'Authorization: Bearer t' -H 'Content-Type: multipart/form-data' \
+  -F title='Users "Q3"' \
+  -F 'file=@./data/users.csv;type=text/csv' \
+  -F 'avatar=@me.png;filename=avatar.png' \
+  -F 'notes=<./notes.txt' \
+  --form-string 'raw=@not-a-file'

@@ -3,6 +3,7 @@ package request
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -37,6 +38,10 @@ type Request struct {
 	Body string
 	// BodyFile is the resolved path of a "< path" body, or empty.
 	BodyFile string
+	// Parts is set for a multipart body (a literal multipart/* Content-Type
+	// with a boundary): Body split into text, expanded by Render, and file
+	// contents, sent as is. Body holds the parts joined, unexpanded.
+	Parts []BodyPart
 	// PreScript runs before the request is sent ("< {% ... %}" before the
 	// request line); PostScript runs on the response ("> {% ... %}" after the
 	// headers or body). Either may be nil.
@@ -85,7 +90,20 @@ func (r *Request) Render(expand func(string) (string, error)) (*Request, error) 
 			out.Headers[name] = append(out.Headers[name], ev)
 		}
 	}
-	if r.BodyFile == "" {
+	switch {
+	case len(r.Parts) > 0:
+		var b strings.Builder
+		for _, part := range r.Parts {
+			text := part.Text
+			if part.File == "" {
+				if text, err = expand(text); err != nil {
+					return nil, fail("body", err)
+				}
+			}
+			b.WriteString(text)
+		}
+		out.Body = b.String()
+	case r.BodyFile == "":
 		if out.Body, err = expand(r.Body); err != nil {
 			return nil, fail("body", err)
 		}

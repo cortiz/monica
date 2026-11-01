@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http/cookiejar"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -29,6 +30,7 @@ var (
 	quiet          bool
 	dataPath       string
 	insecure       bool
+	noCookies      bool
 	run            = &cobra.Command{
 		Use:   "run",
 		Short: "Runs all mon files",
@@ -51,6 +53,13 @@ var (
 				}
 			}
 			opts := &runner.Opts{Env: env, Vars: vars, ConfigPath: configPath, Bail: bail, Filters: filters, Quiet: quiet, Insecure: insecure}
+			if !noCookies {
+				// One jar for the whole run: cookies set by a response are
+				// sent on later requests to matching hosts, across files.
+				if opts.CookieJar, err = cookiejar.New(nil); err != nil {
+					return err
+				}
+			}
 			rep, closeOut, err := newReporter(reporterName, outPath, opts, cmd.OutOrStdout())
 			if err != nil {
 				return &exitError{code: ExitUsage, err: err}
@@ -85,6 +94,7 @@ func init() {
 	run.Flags().StringArrayVar(&filters, "filter", nil, "only run requests whose @name, ### title or \"METHOD URL\" matches this glob (repeatable)")
 	run.Flags().BoolVarP(&quiet, "quiet", "q", false, "hide response headers and bodies")
 	run.Flags().BoolVarP(&insecure, "insecure", "k", false, "skip TLS certificate verification (like insecureSkipVerify in monica.yml)")
+	run.Flags().BoolVar(&noCookies, "no-cookies", false, "don't keep cookies that responses set (by default they are sent on later requests)")
 	run.Flags().StringVar(&dataPath, "data", "", "run everything once per row of this CSV or JSON file, with the row's values as variables")
 }
 

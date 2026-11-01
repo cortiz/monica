@@ -1,0 +1,27 @@
+POST https://up.example.com/upload
+Authorization: Bearer t
+Content-Type: multipart/form-data; boundary=MonicaFormBoundary
+
+--MonicaFormBoundary
+Content-Disposition: form-data; name="title"
+
+Users "Q3"
+--MonicaFormBoundary
+Content-Disposition: form-data; name="file"; filename="users.csv"
+Content-Type: text/csv
+
+< ./data/users.csv
+--MonicaFormBoundary
+Content-Disposition: form-data; name="avatar"; filename="avatar.png"
+Content-Type: image/png
+
+< me.png
+--MonicaFormBoundary
+Content-Disposition: form-data; name="notes"
+
+< ./notes.txt
+--MonicaFormBoundary
+Content-Disposition: form-data; name="raw"
+
+@not-a-file
+--MonicaFormBoundary--

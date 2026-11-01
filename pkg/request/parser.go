@@ -234,6 +234,15 @@ func (p *parser) endSection(bySeparator bool) error {
 			if err := p.loadBodyFile(p.req, path); err != nil {
 				return err
 			}
+		} else if boundary, multipart, err := multipartBoundary(p.req); multipart && len(trimTrailingBlank(body)) > 0 {
+			if err != nil {
+				return p.fail(p.req.Line, "%v", err)
+			}
+			var line int
+			p.req.Body, p.req.Parts, line, err = p.parseMultipart(boundary, body)
+			if err != nil {
+				return &ParseError{File: p.file, Line: p.bodyLine + line, Msg: err.Error(), Err: errors.Unwrap(err)}
+			}
 		}
 		p.reqs = append(p.reqs, p.req)
 	}

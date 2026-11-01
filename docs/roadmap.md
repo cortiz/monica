@@ -280,8 +280,13 @@ VUs), `--no-keepalive`, `-k/--insecure` (also on `monica run`), a cookie jar per
   shared writer for 9.2/9.3) and `pkg/importer/curl` (shell-word splitter incl. `$'…'` and
   `^` continuations; method/headers/data/`--json`/`-G`/`-u`/`-T`/`-m`; warnings for the
   rest). Command from an argument, stdin or after `--`; `-o`, `--force`, `--name`.
-  `-F` waits for multipart in 8.3.
+  `-F` / `--form-string` landed with multipart in 8.3.
 - 8.3 Cookies (`cookie jar` per run for `monica run`; `monica load` has one per VU since 7.6), multipart/form-data, file upload.
+  ✅ Done: `monica run` keeps one cookie jar per run (`--no-cookies` turns it off).
+  Multipart bodies are written as raw HTTP parts under a literal `multipart/*; boundary=`
+  Content-Type; lines are sent CRLF and a part that is a single `< path` line uploads that
+  file as is (`Request.Parts`: text parts expanded, file parts not). Whole-body uploads were
+  already `< path`. `import curl` converts `-F`.
 - 8.4 Docs site / full format reference; examples folder.
 - 8.5 Release: goreleaser + Docker image updated with new commands.
 

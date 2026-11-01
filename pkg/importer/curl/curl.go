@@ -6,7 +6,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"mime"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -79,9 +81,21 @@ type options struct {
 	hasUser  bool
 	timeout  time.Duration
 	upload   string
+	form     []formPart
 	queries  []string
 	warnings []string
 }
+
+// formPart is one -F / --form-string value.
+type formPart struct {
+	name, value     string
+	file            string // -F name=@file
+	textFile        string // -F name=<file
+	fileName, ctype string
+}
+
+// FormBoundary separates the parts of a converted -F body.
+const FormBoundary = "MonicaFormBoundary"
 
 // dataPart is one -d / --data-* value.
 type dataPart struct {
@@ -251,7 +265,7 @@ func (o *options) apply(name, value string, hasValue bool) error {
 	case "-k", "--insecure":
 		o.warn("%s: pass -k/--insecure to monica run, or set insecureSkipVerify: true in monica.yml", name)
 	case "-F", "--form", "--form-string":
-		return fmt.Errorf("%s (multipart form data) is not supported yet", name)
+		return o.formPart(name, value)
 	default:
 		if !quietOptions[name] {
 			if hasValue {
@@ -287,6 +301,89 @@ func (o *options) header(h string) error {
 	return nil
 }
 
+// formPart parses -F "name=value", "name=@file[;type=x][;filename=y]" and
+// "name=<file"; --form-string takes the value literally.
+func (o *options) formPart(opt, v string) error {
+	name, value, ok := strings.Cut(v, "=")
+	if !ok || name == "" {
+		return fmt.Errorf("invalid %s %q (expected name=value)", opt, v)
+	}
+	part := formPart{name: name, value: value}
+	if opt == "--form-string" {
+		o.form = append(o.form, part)
+		return nil
+	}
+	switch {
+	case strings.HasPrefix(value, "@"):
+		fields := strings.Split(value[1:], ";")
+		part.file, part.value = fields[0], ""
+		for _, f := range fields[1:] {
+			k, val, _ := strings.Cut(strings.TrimSpace(f), "=")
+			switch k {
+			case "type":
+				part.ctype = val
+			case "filename":
+				part.fileName = strings.Trim(val, `"`)
+			default:
+				o.warn("%s %s: ;%s ignored", opt, v, f)
+			}
+		}
+		if strings.Contains(part.file, ",") {
+			return fmt.Errorf("%s %s: several files in one part are not supported", opt, v)
+		}
+	case strings.HasPrefix(value, "<"):
+		part.textFile, part.value = strings.TrimPrefix(value, "<"), ""
+	default:
+		if i := strings.Index(value, ";type="); i >= 0 {
+			part.value, part.ctype = value[:i], value[i+len(";type="):]
+		}
+	}
+	if part.file == "-" || part.textFile == "-" {
+		return fmt.Errorf("%s %s: stdin is not supported", opt, v)
+	}
+	o.form = append(o.form, part)
+	return nil
+}
+
+// formBody writes the -F parts as a multipart body; file parts become
+// "< path" lines, which monica replaces with the file's contents.
+func (o *options) formBody() string {
+	q := strings.NewReplacer(`"`, "%22", "\r", "%0D", "\n", "%0A")
+	var b strings.Builder
+	for _, p := range o.form {
+		b.WriteString("--" + FormBoundary + "\n")
+		b.WriteString(`Content-Disposition: form-data; name="` + q.Replace(p.name) + `"`)
+		ctype := p.ctype
+		if p.file != "" {
+			fileName := p.fileName
+			if fileName == "" {
+				fileName = filepath.Base(p.file)
+			}
+			b.WriteString(`; filename="` + q.Replace(fileName) + `"`)
+			if ctype == "" {
+				if ctype = mime.TypeByExtension(filepath.Ext(p.file)); ctype == "" {
+					ctype = "application/octet-stream"
+				}
+			}
+		}
+		b.WriteString("\n")
+		if ctype != "" {
+			b.WriteString("Content-Type: " + ctype + "\n")
+		}
+		b.WriteString("\n")
+		switch {
+		case p.file != "":
+			b.WriteString("< " + p.file + "\n")
+		case p.textFile != "":
+			b.WriteString("< " + p.textFile + "\n")
+		default:
+			b.WriteString(p.value + "\n")
+		}
+	}
+	b.WriteString("--" + FormBoundary + "--\n")
+	return b.String()
+}
+
 func (o *options) hasHeader(name string) bool {
 	for _, h := range o.headers {
 		if strings.EqualFold(h.Name, name) {
@@ -320,7 +417,7 @@ func (o *options) request(rawURL string) (importer.Request, error) {
 		method = "HEAD"
 	case o.upload != "":
 		method = "PUT"
-	case len(o.data) > 0 && !o.get:
+	case (len(o.data) > 0 && !o.get) || len(o.form) > 0:
 		method = "POST"
 	}
 	if o.method != "" {
@@ -338,6 +435,18 @@ func (o *options) request(rawURL string) (importer.Request, error) {
 	}
 
 	switch {
+	case len(o.form) > 0:
+		if len(o.data) > 0 || o.upload != "" {
+			return r, errors.New("-F cannot be combined with -d or -T")
+		}
+		var hs []importer.Header
+		for _, h := range r.Headers {
+			if !strings.EqualFold(h.Name, "Content-Type") {
+				hs = append(hs, h)
+			}
+		}
+		r.Headers = append(hs, importer.Header{Name: "Content-Type", Value: "multipart/form-data; boundary=" + FormBoundary})
+		r.Body = o.formBody()
 	case o.upload != "":
 		if len(o.data) > 0 {
 			return r, errors.New("-T and -d cannot be combined")
