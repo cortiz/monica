@@ -308,6 +308,11 @@ func (o *options) formPart(opt, v string) error {
 	if !ok || name == "" {
 		return fmt.Errorf("invalid %s %q (expected name=value)", opt, v)
 	}
+	// A line break could add multipart lines (another part, or a "< path"
+	// line that uploads a local file) that the curl command doesn't show.
+	if strings.ContainsAny(v, "\r\n") {
+		return fmt.Errorf("%s value with a line break is not supported (it could inject multipart lines)", opt)
+	}
 	part := formPart{name: name, value: value}
 	if opt == "--form-string" {
 		o.form = append(o.form, part)

@@ -139,3 +139,22 @@ func mustWrite(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+func TestInitRefusesSymlinks(t *testing.T) {
+	for _, name := range []string{"monica.yml", "example.mon", ".gitignore"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			target := filepath.Join(t.TempDir(), "outside")
+			mustWrite(t, target, "keep")
+			if err := os.Symlink(target, filepath.Join(dir, name)); err != nil {
+				t.Skip("symlinks unavailable:", err)
+			}
+			if _, err := Init(dir, Options{Force: true}); err == nil || !strings.Contains(err.Error(), "symbolic link") {
+				t.Errorf("err = %v, want a symbolic link error", err)
+			}
+			if b, _ := os.ReadFile(target); string(b) != "keep" {
+				t.Errorf("symlink target changed to %q", b)
+			}
+		})
+	}
+}
