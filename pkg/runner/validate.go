@@ -68,8 +68,12 @@ func (v *Validation) Errors() int {
 }
 
 // setRe finds vars.set("name" / vars.set('name' / vars.set(`name` in
-// script source: the names scripts may set at run time.
-var setRe = regexp.MustCompile("vars\\.set\\(\\s*[\"'`]([A-Za-z_][A-Za-z0-9_.-]*)[\"'`]")
+// script source: the names scripts may set at run time. It also knows the
+// setters of the import shims, which call vars.set themselves: Postman's
+// pm.environment / collectionVariables / variables / globals .set, Bruno's
+// bru.setVar / setEnvVar and the .http shim's client.global.set and
+// request.variables.set.
+var setRe = regexp.MustCompile(`(?:(?:vars|pm\.(?:environment|collectionVariables|variables|globals)|client\.global|request\.variables)\.set|bru\.set(?:Env)?Var)\(\s*["'` + "`" + `]([A-Za-z_][A-Za-z0-9_.-]*)["'` + "`" + `]`)
 
 // scriptExts are the files a scripts.paths folder may hold modules in.
 var scriptExts = map[string]bool{".js": true, ".mjs": true, ".cjs": true, ".ts": true, ".mts": true, ".cts": true}
