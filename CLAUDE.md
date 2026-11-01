@@ -1,18 +1,19 @@
 # Monica
 
 Go CLI (`monica run`) that parses `.mon` files (raw HTTP request text) and sends them.
-Module: `jmpeax.com/sec/monica` · Go 1.22 · cobra + zerolog.
+Module: `jmpeax.com/sec/monica` · Go 1.27 · cobra + zerolog.
 
 ## Layout
 - `main.go` → `pkg/cmd` (cobra: `root.go`, `run.go`)
 - `pkg/request` — `.mon` parser (`parser.go`), `Request` type; fixtures in `testdata/*.mon`
 - `pkg/net` — HTTP client + response type
 - `pkg/runner` — glue: parse file → send → print
+- `pkg/tui` — `monica tui` (bubbletea); drives `pkg/runner` through its `Backend`
 - `internal/logging` — zerolog setup
 
 ## Commands
 - Build: `go build ./...` · Test: `go test ./...` · Single pkg: `go test ./pkg/request/ -run TestName`
-- Lint (CI uses golangci-lint v1.58): `golangci-lint run ./...`
+- Lint (CI uses golangci-lint v2.15): `golangci-lint run ./...`
 - Full PR gate: `make pr` (generate + test + fmt)
 - `pkg/net` tests hit httpbin.org — they fail offline; run `go test ./pkg/request/...` for offline checks.
 

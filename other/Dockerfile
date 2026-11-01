@@ -1,7 +1,7 @@
 # Build:  docker build -f other/Dockerfile --build-arg VERSION=1.2.3 -t monica .
 # Run:    docker run --rm -v "$PWD:/work" monica run -r 3
 #         (the current directory is mounted at /work, the working directory)
-FROM golang:1.22-alpine AS builder
+FROM golang:1.27-alpine AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
