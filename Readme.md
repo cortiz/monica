@@ -16,7 +16,7 @@ Keep `.mon` files next to your code, review them in pull requests, and run them 
 
 **Contents:** [Install](#install) · [Quick start](#quick-start) · [Usage](#usage) ·
 [Validate](#validate-without-sending-monica-validate) · [Shell completion](#shell-completion) ·
-[Importing](#importing-curl-postman-bruno) · [Load testing](#load-testing) ·
+[Importing](#importing-curl-postman-bruno-http) · [Load testing](#load-testing) ·
 [TUI](#interactive-ui-monica-tui) · [Scripting](#scripting) · [Modules](#modules) ·
 [Folder hooks](#folder-hooks-monicajs) · [Configuration](#configuration) ·
 [Mon file format](#mon-file-format) · [Examples](examples/README.md) (runnable, one feature per folder)
@@ -35,7 +35,7 @@ Keep `.mon` files next to your code, review them in pull requests, and run them 
   environment names and `.mon` files.
 * `monica load`: virtual users, ramping stages, arrival rates, percentiles, thresholds.
 * `monica tui`: browse, send and load-test requests in an interactive terminal UI.
-* `monica init` to start a project; `monica import curl|postman|bruno` to bring existing requests over.
+* `monica init` to start a project; `monica import curl|postman|bruno|http` to bring existing requests over (JetBrains HTTP Client and VS Code REST Client `.http` files included).
 
 ## Install
 
@@ -158,7 +158,7 @@ them one at a time, and inspect responses and variables.
 
 Next: the [examples](examples/README.md) (one folder per feature), [scripting](#scripting)
 (`test`, `expect`, `vars`, modules), and the full [`.mon` format](#mon-file-format).
-Coming from curl, Postman or Bruno? See [Importing](#importing-curl-postman-bruno).
+Coming from curl, Postman, Bruno or `.http` files? See [Importing](#importing-curl-postman-bruno-http).
 
 ## Usage
 * Start a project: `monica.yml`, an `example.mon` and `.gitignore` entries
@@ -838,7 +838,7 @@ follow in path order. `order` applies to the files that config governs; with sev
 `monica.yml` files, each orders its own files. An entry that places no file is logged as a
 warning. `monica.local.yml` replaces the whole list.
 
-## Importing (curl, Postman, Bruno)
+## Importing (curl, Postman, Bruno, .http)
 
 Convert what you already have into `.mon` files and a `monica.yml`.
 
@@ -946,6 +946,55 @@ Convert what you already have into `.mon` files and a `monica.yml`.
 	  libraries get a `// TODO(monica-import):` line and a report entry.
 	* **Report** — `IMPORT_REPORT.md`, as for Postman. The output folder must be empty unless
 	  `-f, --force`, and can't be the collection folder.
+
+* Import JetBrains HTTP Client / VS Code REST Client files (`.http`, `.rest`): one file, or a
+  folder searched recursively (hidden folders and `node_modules` skipped)
+	```bash
+	monica import http requests.http -o api
+	monica import http ./http -o api        # keeps the folder structure
+	cd api && monica run -r 3 --env dev
+	```
+	Each `.http` file becomes a `.mon` file at the same place (body, multipart and script files
+	it references are copied next to it, so relative paths keep working).
+
+	| `.http` | Monica |
+	|---------|--------|
+	| `###` separator and title, `#` / `//` comments | the same (`### title`, `#` comments) |
+	| `# @name x` / `// @name x` (or the `###` title) | `# @name` |
+	| `# @timeout 5` (seconds, or `ms` / `s` / `m`) | `# @timeout 5s` |
+	| `# @no-redirect` | `defaults.followRedirects: false` when every request has it; otherwise reported |
+	| `# @prompt x` | `{{x}}` read from `${X}` (`.env.example`) |
+	| `METHOD URL [HTTP/x]`, URL alone (`GET`), indented `?a=1` / `&b=2` continuation lines | request line (version dropped); `/path` + `Host:` becomes an absolute URL, no scheme gets `http://` |
+	| headers, body, `< ./file` body, multipart parts with `< ./file` | the same; `<@ ./file` (with variables) is inlined |
+	| `GRAPHQL` requests, `X-Request-Type: GraphQL` | JSON `POST` with `query` and `variables` |
+	| `@x = value` file variables (VS Code, JetBrains) | `defaults.vars` (renamed `<file>_x` when another file or an environment uses the name); a value that refers to other variables is written out where it is used |
+	| `http-client.env.json` (`$shared` → `defaults`), next to the files or in a parent folder up to the repository root | `envs.<name>.vars`; nested objects become dotted names (`{{auth.user}}`) |
+	| `http-client.private.env.json` | `${NAME}` placeholders (`${ENV_NAME}` when several environments have the key), listed in `.env.example`; values are never written |
+	| `.vscode/settings.json` `rest-client.environmentVariables` (`$shared`, `{{$shared x}}`, references between values) and `rest-client.defaultHeaders` | `envs` / `defaults.vars` (references resolved at import) / `defaults.headers` |
+	| `{{$uuid}}`, `{{$random.uuid}}`, `{{$guid}}`, `{{$timestamp}}`, `{{$randomInt}}` | monica built-ins |
+	| `{{$processEnv X}}`, `{{$dotenv X}}`, `{{$env.X}}` | `{{X}}`, read from `${X}` |
+	| `{{$isoTimestamp}}`, `{{$timestamp -1 d}}`, `{{$datetime iso8601\|rfc1123\|"fmt" [offset]}}`, `{{$localDatetime ...}}`, `{{$randomInt 1 10}}`, `{{$random.integer(a, b)}}` / `.float` / `.alphabetic(n)` / `.alphanumeric(n)` / `.hexadecimal(n)` / `.email` | computed in a pre-request script (`dynamic()` from `lib/monica-http.js`) into `{{_dynamicN}}` |
+	| VS Code request variables `{{login.response.body.$.token}}`, `{{login.response.headers.X-Id}}` | a post-response script on `login` does `vars.set("login_token", ...)` (JSONPath via `monica/jsonpath`); the reference becomes `{{login_token}}` |
+	| `< {% %}` / `< ./pre.js` pre-request scripts, `> {% %}` / `> ./handler.js` response handlers | `< {% %}` / `> {% %}` blocks or `.js` files behind `const { client, request, response, jsonPath } = require("monica-http")();` |
+
+	The `lib/monica-http.js` module (`scripts.paths`) supports `client.test`, `client.assert`,
+	`client.log`, `client.global.set/get/clear/clearAll/isEmpty` (monica `vars`),
+	`response.status`, `response.body` (parsed when the content type is JSON, else text),
+	`response.headers.valueOf/valuesOf`, `response.contentType.mimeType/charset`,
+	`request.method`, `request.url/body.getRaw()/tryGetSubstituted()`,
+	`request.headers.all()/findByName()`, `request.variables.set/get`,
+	`request.environment.get` and `jsonPath(value, path)`. `import` statements are moved
+	above the script's block and relative modules copied.
+
+	Not converted (each gets a `TODO(monica-import)` comment and a report entry):
+	`>>` / `>>!` response output redirection, `client.exit()`, streaming handlers
+	(`onEachLine` / `onEachMessage`), the scripts' `crypto` and `$random` APIs (use
+	`monica/crypto` / `monica/random`), npm packages, `WEBSOCKET` / `GRPC` / `ws://` requests,
+	`@no-cookie-jar`, `@connection-timeout` and other directives, `HTTP/2` forcing, XPath
+	request variables, `SSLConfiguration` / `Security` / `$proxy` env settings, other dynamic
+	variables (`{{$random.address.city}}`, `{{$aadToken}}`, ...), and files outside the
+	imported folder. `@no-log` and `@note` are dropped. The output folder must be empty unless
+	`-f, --force`, and can't be the folder of the `.http` files.
 
 ## Mon file format
 ```

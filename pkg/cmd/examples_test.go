@@ -176,7 +176,7 @@ func TestExamples(t *testing.T) {
 	}
 }
 
-// TestExampleLoadAndImports runs the load example and both import sources.
+// TestExampleLoadAndImports runs the load example and the import sources.
 func TestExampleLoadAndImports(t *testing.T) {
 	srv := fakeHTTPBin()
 	defer srv.Close()
@@ -197,7 +197,11 @@ func TestExampleLoadAndImports(t *testing.T) {
 	if code, _, errOut := runBrunoCLI(t, "import", "bruno", "12-import/bruno/todo", "-o", br); code != ExitOK {
 		t.Fatalf("bruno import: %s", errOut)
 	}
-	for _, c := range []struct{ dir, env string }{{pm, ""}, {br, "public"}} {
+	hf := filepath.Join(t.TempDir(), "hf")
+	if code, _, errOut := runHTTPImportCLI(t, "import", "http", "12-import/http", "-o", hf); code != ExitOK {
+		t.Fatalf("http import: %s", errOut)
+	}
+	for _, c := range []struct{ dir, env string }{{pm, ""}, {br, "public"}, {hf, ""}} {
 		args := []string{"run", "-q", "-r", "3", "--var", base}
 		if c.env != "" {
 			args = append(args, "--env", c.env)
