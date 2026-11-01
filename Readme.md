@@ -4,7 +4,7 @@ Monica is one Go binary that **runs HTTP requests** written as plain-text `.mon`
 HTTP, like curl or Bruno), **tests them with JavaScript** (embedded, no Node.js) and
 **load-tests** the same files (like k6).
 
-**Contents:** [Usage](#usage) · [Load testing](#load-testing) · [Scripting](#scripting) ·
+**Contents:** [Install](#install) · [Usage](#usage) · [Load testing](#load-testing) · [Scripting](#scripting) ·
 [Modules](#modules) · [Folder hooks](#folder-hooks-monicajs) · [Configuration](#configuration) ·
 [Mon file format](#mon-file-format) · [Examples](examples/README.md) (runnable, one feature per folder)
 
@@ -19,6 +19,21 @@ HTTP, like curl or Bruno), **tests them with JavaScript** (embedded, no Node.js)
 * Console, JSON and JUnit reports; exit codes for CI.
 * `monica load`: virtual users, ramping stages, arrival rates, percentiles, thresholds.
 * `monica init` to start a project, `monica import curl` to convert curl commands.
+
+## Install
+
+* **Binary** — download an archive for Linux, macOS, Windows or FreeBSD (amd64, arm64, arm,
+  riscv64) from the [releases page](https://github.com/cortiz/monica/releases), check it
+  against `checksums.txt`, and put `monica` on your `PATH`. Archives include this Readme and
+  the [examples](examples/README.md).
+* **Docker** — `docker run --rm -v "$PWD:/work" ghcr.io/cortiz/monica run -r 3` (the image's
+  entrypoint is `monica`; the current directory is mounted at `/work`, its working
+  directory). Tags: `1.2.3`, `1.2` per release.
+* **From source** — clone the repository and run `make build` (Go 1.22+); the binary is
+  `./monica`, versioned from `git describe`.
+
+`monica --version` prints the version; requests without a `User-Agent` header send
+`monica/<version>`.
 
 ## Usage
 * Start a project: `monica.yml`, an `example.mon` and `.gitignore` entries
