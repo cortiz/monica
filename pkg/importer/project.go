@@ -3,6 +3,7 @@ package importer
 import (
 	"bytes"
 	_ "embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -286,4 +287,46 @@ func EscapeSpaces(u string) string {
 		}
 	}
 	return b.String()
+}
+
+// JSString quotes s as a JavaScript string literal for generated scripts:
+// backslash, double quote, control characters and U+2028/U+2029 (line
+// terminators in JavaScript) are escaped, so the result is one literal
+// whatever s holds.
+func JSString(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch {
+		case r == '"':
+			b.WriteString(`\"`)
+		case r == '\\':
+			b.WriteString(`\\`)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r < 0x20 || r == 0x7f || r == 0x2028 || r == 0x2029:
+			fmt.Fprintf(&b, `\u%04x`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
+// GraphQLBody builds a GraphQL request body {"query": ..., "variables": ...};
+// variables must be valid JSON (callers pass "{}" otherwise).
+func GraphQLBody(query, variables string) string {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(struct {
+		Query     string          `json:"query"`
+		Variables json.RawMessage `json:"variables"`
+	}{query, json.RawMessage(variables)})
+	return strings.TrimSuffix(buf.String(), "\n")
 }

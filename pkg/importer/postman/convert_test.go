@@ -85,7 +85,7 @@ func TestConvertShop(t *testing.T) {
 		}},
 		{"graphql: JSON body, collection bearer", func() bool {
 			r := req("search-graphql.mon")
-			return r.Body == `{"query":"query ($q: String!) { search(q: $q) { id } }","variables":{"q": "mug"}}` &&
+			return r.Body == `{"query":"query ($q: String!) { search(q: $q) { id } }","variables":{"q":"mug"}}` &&
 				header(r, "Authorization") == "Bearer {{token}}" && header(r, "Content-Type") == "application/json"
 		}},
 		{"ping: dynamic variables, %} script moved to a file", func() bool {

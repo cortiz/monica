@@ -410,7 +410,6 @@ func (cv *converter) body(r *importer.Request, b *Body, file string) {
 			r.BodyFile = cv.filePath(b.File.Src, file)
 		}
 	case "graphql":
-		q, _ := json.Marshal(b.GraphQL.Query)
 		vars := strings.TrimSpace(b.GraphQL.Variables.String())
 		if vars == "" || !json.Valid([]byte(vars)) {
 			if vars != "" {
@@ -418,7 +417,7 @@ func (cv *converter) body(r *importer.Request, b *Body, file string) {
 			}
 			vars = "{}"
 		}
-		r.Body = cv.text(`{"query":`+string(q)+`,"variables":`+vars+"}", file)
+		r.Body = cv.text(importer.GraphQLBody(b.GraphQL.Query, vars), file)
 		contentType("application/json")
 	default:
 		cv.p.Addf("%s: %s body mode is not supported", file, b.Mode)
@@ -594,10 +593,7 @@ func hasEnv(envs map[string]importer.Settings, name string) bool {
 
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
-func jsString(s string) string {
-	b, _ := json.Marshal(s)
-	return string(b)
-}
+func jsString(s string) string { return importer.JSString(s) }
 
 // Shim returns the pm compatibility module (lib/monica-postman.js).
 func Shim() string { return shimJS }
