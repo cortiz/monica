@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -51,20 +52,25 @@ func runImportCurl(cmd *cobra.Command, args []string) error {
 	usage := func(err error) error { return &exitError{code: ExitUsage, err: err} }
 	cmd.SilenceUsage = true
 	var (
-		res *curl.Result
-		err error
+		res  *curl.Result
+		err  error
+		opts curl.Options
 	)
+	if importOut != "" {
+		// Files the command reads are found from the .mon file's folder.
+		opts.FileDir = filepath.Dir(importOut)
+	}
 	switch {
 	case len(args) == 0 || (len(args) == 1 && args[0] == "-"):
 		in, rerr := io.ReadAll(cmd.InOrStdin())
 		if rerr != nil {
 			return usage(fmt.Errorf("reading stdin: %w", rerr))
 		}
-		res, err = curl.ParseCommand(string(in))
+		res, err = curl.ParseCommandWith(string(in), opts)
 	case len(args) == 1:
-		res, err = curl.ParseCommand(args[0])
+		res, err = curl.ParseCommandWith(args[0], opts)
 	default:
-		res, err = curl.Parse(args)
+		res, err = curl.ParseWith(args, opts)
 	}
 	if err != nil {
 		return usage(fmt.Errorf("curl: %w", err))

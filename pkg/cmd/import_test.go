@@ -86,3 +86,22 @@ func TestImportCurlErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestImportCurlOutRewritesPaths(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	if err := os.WriteFile("body.json", []byte(`{"a":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir("api", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := runImportCLI(t, "", "import", "curl", "-o", "api/x.mon", "curl --data-binary @body.json https://h/x")
+	if code != ExitOK {
+		t.Fatalf("exit %d: %s", code, stderr)
+	}
+	b, _ := os.ReadFile("api/x.mon")
+	if !strings.Contains(string(b), "\n< ../body.json\n") {
+		t.Errorf("file = %q", b)
+	}
+}

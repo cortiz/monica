@@ -1,0 +1,6 @@
+POST https://api.example.com/v1/orders?q=a%%20b
+accept: application/json
+content-type: application/json
+Cookie: sid=1; theme=dark
+
+{"note":"50% & more","path":"C:\\x"}

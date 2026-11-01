@@ -51,6 +51,22 @@ var longWithArg = map[string]bool{
 	"--data-ascii": true, "--data-urlencode": true, "--header": true, "--request": true,
 	"--user": true, "--user-agent": true, "--referer": true, "--cookie": true, "--max-time": true,
 	"--url": true, "--form": true,
+	"--proxy-header": true, "--output-dir": true, "--request-target": true, "--local-port": true,
+	"--proxy-cacert": true, "--proxy-capath": true, "--proxy-cert": true, "--proxy-key": true,
+	"--proxy-cert-type": true, "--proxy-key-type": true, "--proxy-pass": true, "--proxy-ciphers": true,
+	"--proxy-tlsuser": true, "--proxy-tlspassword": true, "--proxy-pinnedpubkey": true,
+	"--pinnedpubkey": true, "--curves": true, "--tls-max": true, "--tlsuser": true, "--tlspassword": true,
+	"--tls13-ciphers": true, "--crlfile": true, "--engine": true, "--egd-file": true, "--random-file": true,
+	"--socks4": true, "--socks4a": true, "--proxy1.0": true, "--hsts": true, "--alt-svc": true,
+	"--etag-compare": true, "--etag-save": true, "--haproxy-clientip": true, "--ipfs-gateway": true,
+	"--mail-from": true, "--mail-rcpt": true, "--mail-auth": true, "--login-options": true,
+	"--sasl-authzid": true, "--krb": true, "--delegation": true, "--service-name": true,
+	"--create-file-mode": true, "--telnet-option": true, "--tftp-blksize": true, "--hostpubmd5": true,
+	"--hostpubsha256": true, "--pubkey": true, "--ftp-account": true, "--ftp-alternative-to-user": true,
+	"--ftp-method": true, "--ftp-ssl-ccc-mode": true, "--continue-at": true,
+	"--parallel-max": true, "--rate": true, "--retry-all-errors-max": true, "--dns-interface": true,
+	"--dns-ipv4-addr": true, "--dns-ipv6-addr": true, "--sessionid": true, "--trace-config": true,
+	"--ech": true, "--ssl-sessions": true, "--ip-tos": true, "--vlan-priority": true,
 }
 
 // quietOptions don't change the request (or are monica's default) and are
@@ -82,6 +98,7 @@ type options struct {
 	timeout  time.Duration
 	upload   string
 	form     []formPart
+	fileDir  string
 	queries  []string
 	warnings []string
 }
@@ -103,13 +120,28 @@ type dataPart struct {
 	value string
 }
 
+// Options configure ParseWith.
+type Options struct {
+	// FileDir is the folder of the .mon file being written. curl reads
+	// files (-d @f, -T f, -F x=@f) relative to the current directory, but
+	// .mon files resolve "< path" from their own folder, so relative paths
+	// are rewritten to be relative to FileDir. Empty keeps them as given
+	// (right for a .mon file in the current directory).
+	FileDir string
+}
+
 // ParseCommand splits a curl command line (see Split) and converts it.
 func ParseCommand(line string) (*Result, error) {
+	return ParseCommandWith(line, Options{})
+}
+
+// ParseCommandWith is ParseCommand with options.
+func ParseCommandWith(line string, opts Options) (*Result, error) {
 	words, warnings, err := Split(line)
 	if err != nil {
 		return nil, err
 	}
-	res, err := Parse(words)
+	res, err := ParseWith(words, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -121,10 +153,15 @@ func ParseCommand(line string) (*Result, error) {
 // one request per URL. Options that cannot be converted are skipped with
 // a warning; malformed options are errors.
 func Parse(args []string) (*Result, error) {
+	return ParseWith(args, Options{})
+}
+
+// ParseWith is Parse with options.
+func ParseWith(args []string, opts Options) (*Result, error) {
 	if len(args) > 0 && (args[0] == "curl" || strings.HasSuffix(args[0], "/curl") || strings.EqualFold(args[0], "curl.exe")) {
 		args = args[1:]
 	}
-	o := &options{}
+	o := &options{fileDir: opts.FileDir}
 	if err := o.read(args); err != nil {
 		return nil, err
 	}
@@ -352,7 +389,7 @@ func (o *options) formPart(opt, v string) error {
 
 // formBody writes the -F parts as a multipart body; file parts become
 // "< path" lines, which monica replaces with the file's contents.
-func (o *options) formBody() string {
+func (o *options) formBody() (string, error) {
 	q := strings.NewReplacer(`"`, "%22", "\r", "%0D", "\n", "%0A")
 	var b strings.Builder
 	for _, p := range o.form {
@@ -377,16 +414,48 @@ func (o *options) formBody() string {
 		}
 		b.WriteString("\n")
 		switch {
-		case p.file != "":
-			b.WriteString("< " + p.file + "\n")
-		case p.textFile != "":
-			b.WriteString("< " + p.textFile + "\n")
+		case p.file != "" || p.textFile != "":
+			f := p.file
+			if f == "" {
+				f = p.textFile
+			}
+			path, err := o.path(f)
+			if err != nil {
+				return "", err
+			}
+			b.WriteString("< " + path + "\n")
 		default:
+			// A text value that looks like a "< path" line would be read
+			// as a file part; the format has no escape for it.
+			if t := strings.TrimLeft(p.value, " \t"); strings.HasPrefix(t, "<") && len(t) > 1 && (t[1] == ' ' || t[1] == '\t') {
+				return "", fmt.Errorf("form value %q for %s would be read as a file (\"< path\") in a .mon file", p.value, p.name)
+			}
 			b.WriteString(p.value + "\n")
 		}
 	}
 	b.WriteString("--" + FormBoundary + "--\n")
-	return b.String()
+	return b.String(), nil
+}
+
+// path rewrites a file path from the command (relative to the current
+// directory) to be relative to the .mon file's folder.
+func (o *options) path(p string) (string, error) {
+	if o.fileDir == "" || filepath.IsAbs(p) {
+		return p, nil
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	dir, err := filepath.Abs(o.fileDir)
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(dir, abs)
+	if err != nil {
+		return abs, nil //nolint:nilerr // no relative path (e.g. another drive): use the absolute one
+	}
+	return filepath.ToSlash(rel), nil
 }
 
 func (o *options) hasHeader(name string) bool {
@@ -451,7 +520,9 @@ func (o *options) request(rawURL string) (importer.Request, error) {
 			}
 		}
 		r.Headers = append(hs, importer.Header{Name: "Content-Type", Value: "multipart/form-data; boundary=" + FormBoundary})
-		r.Body = o.formBody()
+		if r.Body, err = o.formBody(); err != nil {
+			return r, err
+		}
 	case o.upload != "":
 		if len(o.data) > 0 {
 			return r, errors.New("-T and -d cannot be combined")
@@ -459,7 +530,9 @@ func (o *options) request(rawURL string) (importer.Request, error) {
 		if o.upload == "-" || o.upload == "." {
 			return r, fmt.Errorf("-T %s (stdin) is not supported", o.upload)
 		}
-		r.BodyFile = o.upload
+		if r.BodyFile, err = o.path(o.upload); err != nil {
+			return r, err
+		}
 	case len(o.data) > 0:
 		body, file, err := o.body()
 		if err != nil {
@@ -471,6 +544,11 @@ func (o *options) request(rawURL string) (importer.Request, error) {
 			}
 			r.URL = appendQuery(r.URL, strings.NewReplacer(" ", "%20", "\t", "%09", "\r", "%0D", "\n", "%0A").Replace(body))
 			break
+		}
+		if file != "" {
+			if file, err = o.path(file); err != nil {
+				return r, err
+			}
 		}
 		r.Body, r.BodyFile = body, file
 		if o.json {
@@ -524,9 +602,6 @@ func (o *options) body() (body, file string, err error) {
 					o.warn("-d %s: curl strips line breaks from the file; monica sends it as is (like --data-binary)", v)
 				}
 				return "", path, nil
-			}
-			if d.kind == "ascii" {
-				v = strings.NewReplacer("\r", "", "\n", "").Replace(v)
 			}
 		}
 		parts = append(parts, v)

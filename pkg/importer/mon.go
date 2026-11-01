@@ -44,7 +44,7 @@ var (
 func WriteMon(w io.Writer, reqs []Request) error {
 	var b strings.Builder
 	for i, r := range reqs {
-		if err := check(r); err != nil {
+		if err := check(r, i == len(reqs)-1); err != nil {
 			return fmt.Errorf("request %d (%s %s): %w", i+1, r.Method, r.URL, err)
 		}
 		if i > 0 || r.Title != "" {
@@ -82,8 +82,9 @@ func WriteMon(w io.Writer, reqs []Request) error {
 	return err
 }
 
-// check reports what WriteMon cannot write for r.
-func check(r Request) error {
+// check reports what WriteMon cannot write for r; last is set for the
+// file's last request.
+func check(r Request, last bool) error {
 	if !methodRe.MatchString(r.Method) {
 		return fmt.Errorf("invalid method %q", r.Method)
 	}
@@ -114,6 +115,16 @@ func check(r Request) error {
 		return nil
 	}
 	lines := strings.Split(strings.ReplaceAll(r.Body, "\r\n", "\n"), "\n")
+	if !last {
+		// Before a "###" separator the parser drops a body's trailing blank lines.
+		content := lines
+		if n := len(content); n > 0 && content[n-1] == "" {
+			content = content[:n-1]
+		}
+		if n := len(content); n > 0 && strings.TrimSpace(content[n-1]) == "" {
+			return fmt.Errorf("a body ending in blank lines can only be the file's last request")
+		}
+	}
 	for _, line := range lines {
 		if strings.HasPrefix(line, "###") {
 			return fmt.Errorf("a body line starts with ###, which would start a new request")

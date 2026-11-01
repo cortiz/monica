@@ -86,6 +86,13 @@ func TestSplit(t *testing.T) {
 		{"variable", "curl $BASE/x", []string{"curl", "$BASE/x"}, 1},
 		{"dollar alone", "curl 'a' $ b", []string{"curl", "a", "$", "b"}, 0},
 		{"empty", "  \n", nil, 0},
+		{"cmd caret quotes", "curl ^\"a b^\" ^\n -d ^\"{^\\^\"k^\\^\":1}^\"", []string{"curl", "a b", "-d", `{"k":1}`}, 0},
+		{"cmd quotes keep carets", "curl \"a^b\" ^\r\n x^&y", []string{"curl", "a^b", "x&y"}, 0},
+		{"cmd backslashes", `curl ^"a\\\\^" b\\c ^"\\\^"q^"`, []string{"curl", `a\\`, `b\\c`, `\"q`}, 0},
+		{"cmd doubled quote inside quotes", `curl ^"say ""hi""^"`, []string{"curl", `say "hi"`}, 0},
+		{"cmd empty arg", `curl ^"^" x`, []string{"curl", "", "x"}, 0},
+		{"cmd pipe ends command", "curl ^\"u^\" | more", []string{"curl", "u"}, 1},
+		{"cmd variable", "curl ^\"%BASE%/x^\"", []string{"curl", "%BASE%/x"}, 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -131,9 +138,9 @@ func TestParse(t *testing.T) {
 			want: importer.Request{Method: "DELETE", URL: "https://h/x", Headers: []hdr{h("Accept", "text/plain")}},
 		},
 		{
-			name: "-d strips line breaks, data-raw keeps them, joined with &",
-			args: []string{"https://h", "-d", "a=1\n", "--data-raw", "b=2\n"},
-			want: importer.Request{Method: "POST", URL: "https://h", Headers: []hdr{h("Content-Type", "application/x-www-form-urlencoded")}, Body: "a=1&b=2\n"},
+			name: "-d keeps line breaks of literal values (curl strips only @file's), joined with &",
+			args: []string{"https://h", "-d", "a=1\nx", "--data-raw", "b=2\n"},
+			want: importer.Request{Method: "POST", URL: "https://h", Headers: []hdr{h("Content-Type", "application/x-www-form-urlencoded")}, Body: "a=1\nx&b=2\n"},
 		},
 		{
 			name: "explicit content type kept, -X wins over -d",
@@ -184,6 +191,12 @@ func TestParse(t *testing.T) {
 			warnings: []string{`the request contains "{{", which monica reads as a {{variable}}`},
 		},
 		{
+			name:     "long options with values don't become URLs",
+			args:     []string{"https://h", "--proxy-header", "X: y", "--output-dir", "out", "--request-target", "*"},
+			want:     importer.Request{Method: "GET", URL: "https://h"},
+			warnings: []string{"option --proxy-header X: y ignored", "option --output-dir out ignored", "option --request-target * ignored"},
+		},
+		{
 			name: "-- ends options",
 			args: []string{"-s", "--", "-not-an-option.example.com"},
 			want: importer.Request{Method: "GET", URL: "http://-not-an-option.example.com"},
@@ -224,6 +237,7 @@ func TestParseErrors(t *testing.T) {
 		{"form type with line break", []string{"https://h", "-F", "a=b;type=text/plain\n\n< /etc/passwd"}, "line break"},
 		{"form value with line break", []string{"https://h", "-F", "a=x\r\n--MonicaFormBoundary"}, "line break"},
 		{"form-string with line break", []string{"https://h", "--form-string", "a=x\n< ~/.ssh/id_rsa"}, "line break"},
+		{"form-string read as a file", []string{"https://h", "--form-string", "msg=< 5 items"}, "would be read as a file"},
 		{"form stdin", []string{"https://h", "-F", "a=@-"}, "stdin"},
 		{"bad max-time", []string{"https://h", "-m", "soon"}, "invalid -m"},
 		{"file with other data", []string{"https://h", "-d", "@a", "-d", "b"}, "cannot be combined"},
@@ -236,6 +250,44 @@ func TestParseErrors(t *testing.T) {
 			_, err := Parse(tt.args)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Errorf("err = %v, want it to contain %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// TestFileDir checks that file paths are rewritten relative to the .mon
+// file's folder.
+func TestFileDir(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	abs := filepath.Join(cwd, "abs.json")
+	tests := []struct {
+		name, fileDir string
+		args          []string
+		wantFile      string
+		wantBody      string
+	}{
+		{"no dir", "", []string{"https://h", "-d", "@body.json"}, "body.json", ""},
+		{"subdir", "api", []string{"https://h", "-d", "@body.json"}, "../body.json", ""},
+		{"absolute dir", filepath.Join(cwd, "api", "v1"), []string{"https://h", "-T", "data/x.bin"}, "../../data/x.bin", ""},
+		{"absolute path kept", "api", []string{"https://h", "--data-binary", "@" + abs}, abs, ""},
+		{"form parts", "api", []string{"https://h", "-F", "f=@up/a.png", "-F", "t=<notes.txt"}, "",
+			"< ../up/a.png\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := ParseWith(tt.args, Options{FileDir: tt.fileDir})
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := res.Requests[0]
+			if r.BodyFile != tt.wantFile {
+				t.Errorf("BodyFile = %q, want %q", r.BodyFile, tt.wantFile)
+			}
+			if tt.wantBody != "" && (!strings.Contains(r.Body, tt.wantBody) || !strings.Contains(r.Body, "< ../notes.txt\n")) {
+				t.Errorf("body = %q", r.Body)
 			}
 		})
 	}

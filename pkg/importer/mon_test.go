@@ -84,3 +84,37 @@ func TestWriteMonErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestWriteMonTrailingBlankLines(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string // error substring; empty means ok
+	}{
+		{"one newline", "x\n", ""},
+		{"no newline", "x", ""},
+		{"blank line", "x\n\n", "last request"},
+		{"spaces line", "x\n  \n", "last request"},
+		{"crlf blank", "x\r\n\r\n", "last request"},
+		{"only blank", "\n\n", "last request"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			first := Request{Method: "POST", URL: "https://h/1", Body: tt.body}
+			// As the last request, any body is fine.
+			if err := WriteMon(&bytes.Buffer{}, []Request{first}); err != nil {
+				t.Fatalf("last request: %v", err)
+			}
+			err := WriteMon(&bytes.Buffer{}, []Request{first, {Method: "GET", URL: "https://h/2"}})
+			if tt.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("err = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}

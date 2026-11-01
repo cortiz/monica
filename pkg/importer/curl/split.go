@@ -3,17 +3,26 @@ package curl
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
 
+// cmdStyle matches the marks of a Windows cmd command line: "^" line
+// continuations or ^" quotes (Chrome's "Copy as cURL (cmd)").
+var cmdStyle = regexp.MustCompile(`\^\r?\n|\^"`)
+
 // Split breaks a shell command line into words the way a POSIX shell would
 // for a typical "copy as cURL" command: single and double quotes, $'...'
 // (ANSI-C) quotes, backslash escapes and backslash-newline continuations
-// (also "^"-newline from Windows cmd). Variables and command substitutions
+// (also "^"-newline from Windows cmd). A command with cmd marks ("^" at a
+// line end, or ^") is split the way cmd and curl.exe would (see splitCmd). Variables and command substitutions
 // are not expanded; they are kept as text and reported in warnings. An
 // unquoted |, ;, &, < or > ends the command; the rest is reported.
 func Split(line string) (words, warnings []string, err error) {
+	if cmdStyle.MatchString(line) {
+		return splitCmd(line)
+	}
 	var (
 		cur     strings.Builder
 		inWord  bool
@@ -208,4 +217,106 @@ func ansiC(r []rune) (string, int, error) {
 
 func isHex(c rune) bool {
 	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+}
+
+// splitCmd splits a Windows cmd command line in two passes, as cmd and
+// then curl.exe do: cmd removes "^" escapes outside its own "..." quotes
+// (and "^" + line break joins lines), then the C runtime splits arguments
+// on blanks outside "..." with its backslash rules (2n backslashes before
+// " give n and a quote; 2n+1 give n and a literal "; "" inside quotes is
+// a literal "). An unescaped |, &, < or > outside quotes ends the command.
+func splitCmd(line string) (words, warnings []string, err error) {
+	var pass1 strings.Builder
+	r := []rune(line)
+	quoted := false
+	warnVar := false
+loop:
+	for i := 0; i < len(r); i++ {
+		c := r[i]
+		switch {
+		case c == '"':
+			quoted = !quoted
+			pass1.WriteRune(c)
+		case quoted:
+			pass1.WriteRune(c)
+		case c == '^':
+			if i+1 == len(r) {
+				continue
+			}
+			i++
+			switch r[i] {
+			case '\r':
+				if i+1 < len(r) && r[i+1] == '\n' {
+					i++
+				}
+			case '\n':
+			default:
+				pass1.WriteRune(r[i])
+			}
+		case strings.ContainsRune("|&<>", c):
+			warnings = append(warnings, fmt.Sprintf("ignored the rest of the command line: %q", strings.TrimSpace(string(r[i:]))))
+			break loop
+		case c == '%':
+			if j := indexRune(r, i+1, '%'); j > i+1 && !strings.ContainsAny(string(r[i+1:j]), " \t\r\n") {
+				warnVar = true
+			}
+			pass1.WriteRune(c)
+		default:
+			pass1.WriteRune(c)
+		}
+	}
+	if quoted {
+		return nil, nil, errors.New("unterminated \" quote")
+	}
+	if warnVar {
+		warnings = append(warnings, "cmd variables (%NAME%) were not expanded; replace them with {{variables}}")
+	}
+
+	var cur strings.Builder
+	inWord, inQuote := false, false
+	a := []rune(pass1.String())
+	for i := 0; i < len(a); i++ {
+		c := a[i]
+		switch {
+		case c == '\\':
+			n := 0
+			for i < len(a) && a[i] == '\\' {
+				n++
+				i++
+			}
+			if i < len(a) && a[i] == '"' {
+				cur.WriteString(strings.Repeat("\\", n/2))
+				if n%2 == 1 {
+					cur.WriteRune('"')
+				} else {
+					i-- // the quote is handled on the next turn
+				}
+			} else {
+				cur.WriteString(strings.Repeat("\\", n))
+				i--
+			}
+			inWord = true
+		case c == '"':
+			if inQuote && i+1 < len(a) && a[i+1] == '"' {
+				cur.WriteRune('"')
+				i++
+			} else {
+				inQuote = !inQuote
+			}
+			inWord = true
+		case !inQuote && (c == ' ' || c == '\t' || c == '\r' || c == '\n'):
+			if inWord {
+				words = append(words, cur.String())
+				cur.Reset()
+				inWord = false
+			}
+		default:
+			cur.WriteRune(c)
+			inWord = true
+		}
+	}
+	if inWord {
+		words = append(words, cur.String())
+	}
+	return words, warnings, nil
 }
