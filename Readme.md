@@ -8,6 +8,17 @@ Monica is designed to handle Network requests and responses.
 * Parse HTTP responses, including headers and body.
 
 ## Usage
+* Start a project: `monica.yml`, an `example.mon` and `.gitignore` entries
+	```bash
+	monica init               # in the current directory, or: monica init ./api
+	monica run -s example.mon
+	```
+	`monica.yml` sets a `baseUrl` variable (`--base-url`, default `https://httpbin.org`) in
+	`defaults` and a `dev` environment; `example.mon` holds a GET and a POST request with
+	tests. `.env` and `monica.local.yml` are appended to `.gitignore` when it doesn't list
+	them. Existing `monica.yml` and `example.mon` files are kept unless `-f, --force`; each
+	file is reported as `created`, `overwritten`, `updated` or `skipped`.
+
 * Runs all `mon` files in the current directory
 	```bash
 	monica run 

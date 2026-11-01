@@ -272,6 +272,9 @@ VUs), `--no-keepalive`, `-k/--insecure` (also on `monica run`), a cookie jar per
 ## Phase 8 — Polish & distribution
 
 - 8.1 `monica init` — scaffold `monica.yml`, example `.mon`, `.gitignore` entries.
+  ✅ Done: `monica init [dir]` (`pkg/scaffold`, embedded templates) writes `monica.yml`
+  (`baseUrl` from `--base-url`, `dev` env), `example.mon` (GET + POST with tests) and appends
+  `.env` / `monica.local.yml` to `.gitignore`; existing files kept unless `--force`.
 - 8.2 `monica import curl '<cmd>'` → `.mon` (Postman/Bruno import live in Phase 9).
 - 8.3 Cookies (`cookie jar` per run for `monica run`; `monica load` has one per VU since 7.6), multipart/form-data, file upload.
 - 8.4 Docs site / full format reference; examples folder.
