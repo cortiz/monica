@@ -5,15 +5,11 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
-var (
-	jsonKey    = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#1d4ed8", Dark: "#7aa2f7"})
-	jsonString = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#15803d", Dark: "#9ece6a"})
-	jsonNumber = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#b45309", Dark: "#ff9e64"})
-	jsonLit    = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#7e22ce", Dark: "#bb9af7"})
-)
+// JSON token styles; setTheme assigns them.
+var jsonKey, jsonString, jsonNumber, jsonLit lipgloss.Style
 
 // prettyBody indents a JSON body and colors it when color is set; other
 // bodies are returned as they are. ok reports whether it was JSON.

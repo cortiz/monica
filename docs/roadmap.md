@@ -323,8 +323,8 @@ Independent tracks: they can be picked up in any order once their prerequisites 
 - Keep the runner emitting events (started / response / test result) so CLI reporters and
   the TUI consume the same stream — design this into 4.2.
 - ✅ Done when: everything doable in the TUI is also doable via `monica run`; TUI has model-level tests (bubbletea `Update` is pure).
-- ✅ Done: `monica tui` (`pkg/tui`) with bubbletea v1.3.10, bubbles v1.0.0, lipgloss v1.1.0 (after the
-  move to Go 1.27). Tree / request / response layout with body
+- ✅ Done: `monica tui` (`pkg/tui`) with bubbletea v2.1.1, bubbles v2.2.1, lipgloss v2.0.6 (`charm.land/…`; v1
+  queried the terminal at startup of every command). Tree / request / response layout with body
   (pretty, colored JSON), headers, timings, tests and log tabs; env picker and variables
   panel (masked, with sources); `$EDITOR` at the request line, reload on exit and on file
   change; session history; live load dashboard (VUs, rps sparkline, p95, failures, summary
@@ -368,7 +368,7 @@ so each source only implements parsing.
 | `github.com/dop251/goja` | 3 | ✅ approved, pinned to 2025-06-30 (Go 1.22 compatible) |
 | `github.com/dop251/goja_nodejs` | 5 | ✅ approved (2026-09-18 commit; needs goja ≥ 2025-03) |
 | `github.com/evanw/esbuild` | 5.5 | ✅ approved (v0.28.2, Go 1.13+) |
-| `github.com/charmbracelet/bubbletea`, `bubbles`, `lipgloss` | 9.1 | ✅ approved (v1.3.10, v1.0.0, v1.1.0) |
+| `github.com/charmbracelet/bubbletea`, `bubbles`, `lipgloss` | 9.1 | ✅ approved (v2: `charm.land/bubbletea/v2` v2.1.1, `bubbles/v2` v2.2.1, `lipgloss/v2` v2.0.6) |
 
 Postman and Bruno import need no new dependencies (stdlib JSON + hand-written `.bru` parser).
 

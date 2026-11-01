@@ -7,24 +7,43 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"image/color"
+
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"jmpeax.com/sec/monica/pkg/report"
 )
 
 var errNoFiles = errors.New("no .mon files")
 
+// Styles and colors; setTheme assigns them for a light or dark terminal.
 var (
-	borderFocused = lipgloss.AdaptiveColor{Light: "#2563eb", Dark: "#7aa2f7"}
-	borderDim     = lipgloss.AdaptiveColor{Light: "#d4d4d8", Dark: "#3b3f51"}
-	dim           = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#71717a", Dark: "#737aa2"})
-	bold          = lipgloss.NewStyle().Bold(true)
-	okStyle       = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#15803d", Dark: "#9ece6a"})
-	errStyle      = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#b91c1c", Dark: "#f7768e"})
-	selStyle      = lipgloss.NewStyle().Reverse(true)
-	tabActive     = lipgloss.NewStyle().Bold(true).Underline(true)
-	methodStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#7e22ce", Dark: "#bb9af7"})
+	borderFocused, borderDim                                       color.Color
+	dim, bold, okStyle, errStyle, selStyle, tabActive, methodStyle lipgloss.Style
 )
+
+func init() { setTheme(true) }
+
+// setTheme picks colors for a dark or light terminal background (dark
+// until the terminal answers the TUI's background color query).
+func setTheme(dark bool) {
+	c := func(light, darkHex string) color.Color {
+		return lipgloss.LightDark(dark)(lipgloss.Color(light), lipgloss.Color(darkHex))
+	}
+	borderFocused, borderDim = c("#2563eb", "#7aa2f7"), c("#d4d4d8", "#3b3f51")
+	dim = lipgloss.NewStyle().Foreground(c("#71717a", "#737aa2"))
+	bold = lipgloss.NewStyle().Bold(true)
+	okStyle = lipgloss.NewStyle().Foreground(c("#15803d", "#9ece6a"))
+	errStyle = lipgloss.NewStyle().Foreground(c("#b91c1c", "#f7768e"))
+	selStyle = lipgloss.NewStyle().Reverse(true)
+	tabActive = lipgloss.NewStyle().Bold(true).Underline(true)
+	methodStyle = lipgloss.NewStyle().Bold(true).Foreground(c("#7e22ce", "#bb9af7"))
+	jsonKey = lipgloss.NewStyle().Foreground(c("#1d4ed8", "#7aa2f7"))
+	jsonString = lipgloss.NewStyle().Foreground(c("#15803d", "#9ece6a"))
+	jsonNumber = lipgloss.NewStyle().Foreground(c("#b45309", "#ff9e64"))
+	jsonLit = lipgloss.NewStyle().Foreground(c("#7e22ce", "#bb9af7"))
+}
 
 // Pane sizes, from the window size.
 func (m *Model) treeWidth() int {
@@ -57,8 +76,8 @@ func (m *Model) responseHeight() int { return max0(m.bodyHeight() - m.requestHei
 
 // layout resizes the response viewport after a size change.
 func (m *Model) layout() {
-	m.resp.Width = max0(m.rightWidth() - 2)
-	m.resp.Height = max0(m.responseHeight() - 4) // borders, tabs, status
+	m.resp.SetWidth(max0(m.rightWidth() - 2))
+	m.resp.SetHeight(max0(m.responseHeight() - 4)) // borders, tabs, status
 	m.move(0)
 	m.refreshResponse()
 }
@@ -96,7 +115,7 @@ func (m *Model) tabContent() string {
 			return dim.Render("(empty body)")
 		}
 		body, _ := prettyBody(r.ResponseBody, true)
-		return wrap(body, m.resp.Width)
+		return wrap(body, m.resp.Width())
 	case tabHeaders:
 		if r.ResponseStatus == "" {
 			return dim.Render("No response.")
@@ -113,7 +132,7 @@ func (m *Model) tabContent() string {
 				b.WriteString(jsonKey.Render(n) + ": " + v + "\n")
 			}
 		}
-		return wrap(strings.TrimRight(b.String(), "\n"), m.resp.Width)
+		return wrap(strings.TrimRight(b.String(), "\n"), m.resp.Width())
 	case tabTimings:
 		if r.ResponseStatus == "" {
 			return dim.Render("No response.")
@@ -147,13 +166,21 @@ func (m *Model) tabContent() string {
 				}
 			}
 		}
-		return wrap(strings.TrimRight(b.String(), "\n"), m.resp.Width)
+		return wrap(strings.TrimRight(b.String(), "\n"), m.resp.Width())
 	}
 	return ""
 }
 
-// View implements tea.Model.
-func (m *Model) View() string {
+// View implements tea.Model: the full-screen UI, with mouse wheel scrolling.
+func (m *Model) View() tea.View {
+	v := tea.NewView(m.render())
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
+}
+
+// render draws the screen.
+func (m *Model) render() string {
 	header := m.headerLine()
 	if m.overlay == overlayLoad {
 		// The load summary is a wide table: give it the whole window.
@@ -449,12 +476,12 @@ func envName(e string) string {
 
 // box draws content in a rounded border of the given outer size.
 func box(content string, w, h int, focused bool) string {
-	color := borderDim
+	border := borderDim
 	if focused {
-		color = borderFocused
+		border = borderFocused
 	}
-	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(color).
-		Width(max0(w - 2)).Height(max0(h - 2)).MaxHeight(max0(h)).
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).
+		Width(w).Height(h).MaxHeight(h).
 		Render(clipLines(content, max0(h-2), max0(w-2)))
 }
 

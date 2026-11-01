@@ -8,7 +8,7 @@ Module: `jmpeax.com/sec/monica` · Go 1.27 · cobra + zerolog.
 - `pkg/request` — `.mon` parser (`parser.go`), `Request` type; fixtures in `testdata/*.mon`
 - `pkg/net` — HTTP client + response type
 - `pkg/runner` — glue: parse file → send → print
-- `pkg/tui` — `monica tui` (bubbletea); drives `pkg/runner` through its `Backend`
+- `pkg/tui` — `monica tui` (bubbletea v2, `charm.land/...`); drives `pkg/runner` through its `Backend`
 - `internal/logging` — zerolog setup
 
 ## Commands
