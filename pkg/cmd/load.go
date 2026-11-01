@@ -84,7 +84,7 @@ func runLoad(cmd *cobra.Command, _ []string) error {
 	}
 	ropts := runner.Opts{Env: env, Vars: vars, ConfigPath: loadConfig, Filters: loadFilters, Insecure: loadInsecure}
 
-	opts, thresholds, err := loadOptions(cmd)
+	opts, thresholds, err := loadOptions(cmd.Flags().Changed, loadConfig)
 	if err != nil {
 		return &exitError{code: ExitUsage, err: err}
 	}
@@ -179,9 +179,10 @@ func isTerminal(w io.Writer) bool {
 // the nearest one above the current directory). --iterations without
 // --duration means no time limit, even when the config sets one;
 // --threshold replaces load.thresholds.
-func loadOptions(cmd *cobra.Command) (load.Options, []load.Threshold, error) {
+// changed reports whether a flag was set; configPath is --config.
+func loadOptions(changed func(string) bool, configPath string) (load.Options, []load.Threshold, error) {
 	opts := load.Options{VUs: loadVUs, Duration: loadDuration, Iterations: loadIterations, GracefulStop: loadGracefulStop}
-	path := loadConfig
+	path := configPath
 	if path == "" {
 		var err error
 		if path, err = config.Find("."); err != nil {
@@ -198,7 +199,7 @@ func loadOptions(cmd *cobra.Command) (load.Options, []load.Threshold, error) {
 	}
 	var thresholds []load.Threshold
 	var err error
-	if cmd.Flags().Changed("threshold") {
+	if changed("threshold") {
 		thresholds, err = load.ParseThresholds(loadThresholds)
 	} else if thresholds, err = load.ParseThresholds(settings.Thresholds); err != nil {
 		err = fmt.Errorf("%s: load.thresholds: %w", path, err)
@@ -206,7 +207,6 @@ func loadOptions(cmd *cobra.Command) (load.Options, []load.Threshold, error) {
 	if err != nil {
 		return opts, nil, err
 	}
-	changed := cmd.Flags().Changed
 	rateText := settings.Rate
 	if changed("rate") {
 		rateText = loadRate

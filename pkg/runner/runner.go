@@ -45,6 +45,7 @@ type Runner struct {
 	mask     masker                    // of the request being run, for console output
 	bailed   bool                      // --bail tripped: run nothing more
 	filters  []*regexp.Regexp          // compiled Opts.Filters
+	onlyLine int                       // RunRequestAt: run only this request line
 
 	iteration int // 1-based --data row being run; 0 without --data
 	row       Row // its variables
@@ -138,6 +139,9 @@ func (r *Runner) Bailed() bool { return r.bailed }
 
 // selected reports whether req passes the --filter globs.
 func (r *Runner) selected(req *request.Request) bool {
+	if r.onlyLine > 0 {
+		return req.Line == r.onlyLine
+	}
 	if len(r.filters) == 0 {
 		return true
 	}
@@ -342,6 +346,13 @@ func (r *Runner) attempt(file, where string, req *request.Request, p *project, c
 	out.Status, out.StatusText, out.Duration = res.StatusCode, http.StatusText(res.StatusCode), res.Duration
 	out.Timings, out.BytesSent, out.BytesReceived = res.Timings, res.BytesSent, res.BytesReceived
 	out.Response = p.mask.String(res.String())
+	out.ResponseStatus, out.ResponseBody = res.Status, p.mask.String(res.Body)
+	out.ResponseHeaders = make(map[string][]string, len(res.Headers))
+	for name, values := range res.Headers {
+		for _, v := range values {
+			out.ResponseHeaders[name] = append(out.ResponseHeaders[name], p.mask.String(v))
+		}
+	}
 	// afterEach hooks run even when the post-response script failed; the
 	// first error is the one reported.
 	var postErr error

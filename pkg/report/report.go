@@ -37,6 +37,12 @@ type Request struct {
 	Tests []script.TestResult `json:"tests,omitempty"`
 	// Response is the printable response (status line, headers, body).
 	Response string `json:"-"`
+	// ResponseStatus ("HTTP/1.1 200 OK"), ResponseHeaders and ResponseBody
+	// are the response's parts, masked like Response; empty when nothing
+	// was received.
+	ResponseStatus  string              `json:"-"`
+	ResponseHeaders map[string][]string `json:"-"`
+	ResponseBody    string              `json:"-"`
 	// Timings, BytesSent and BytesReceived describe the exchange, for load
 	// metrics; zero when nothing was received.
 	Timings                  net.Timings `json:"-"`
