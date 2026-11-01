@@ -396,3 +396,39 @@ func TestSymlinksNotRead(t *testing.T) {
 		}
 	}
 }
+
+// TestCopyClashes: body files named like monica's own files are not
+// copied as is (a monica.js body would become a folder hook, a .mon body
+// a request file).
+func TestCopyClashes(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"monica.js", "Monica.yml", "other.mon", "data.json"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var http strings.Builder
+	for _, name := range []string{"monica.js", "Monica.yml", "other.mon", "data.json"} {
+		http.WriteString("###\nPOST https://h/" + name + "\n\n< ./" + name + "\n")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "r.http"), []byte(http.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := convert(t, dir)
+	tests := []struct{ file, report string }{
+		{"monica.js", "./monica.js was not copied (monica would treat a file named monica.js as its own)"},
+		{"Monica.yml", "./Monica.yml was not copied (monica would treat a file named Monica.yml as its own)"},
+		{"other.mon", "./other.mon was not copied (monica would run a .mon file as requests)"},
+	}
+	for _, tt := range tests {
+		if _, ok := p.Extra[tt.file]; ok {
+			t.Errorf("%s was copied", tt.file)
+		}
+		if !reported(p, tt.report) {
+			t.Errorf("report misses %q: %v", tt.report, p.Report)
+		}
+	}
+	if p.Extra["data.json"] != "x" {
+		t.Errorf("data.json not copied: %v", sortedKeys(p.Extra))
+	}
+}

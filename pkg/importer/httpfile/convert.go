@@ -638,6 +638,9 @@ func (fc *fileConv) copyRef(ref, where string) string {
 	if reason == "" {
 		reason = fc.cv.copyable(rel)
 	}
+	if reason == "" {
+		reason = fc.cv.clashes(rel)
+	}
 	if reason != "" {
 		fc.cv.p.Addf("%s: file %s was not copied (%s); put it where the .mon file expects it", where, ref, reason)
 		return ref
@@ -652,6 +655,26 @@ func (fc *fileConv) copyRef(ref, where string) string {
 		fc.cv.p.Extra[rel] = string(data)
 	}
 	return fc.fromMon(rel)
+}
+
+// clashes says why copying rel as is would clash with the generated
+// project ("" if it doesn't): monica treats monica.js as a folder hook,
+// monica.yml / monica.local.yml as config and .mon files as requests to
+// run, and a handler script may already be written at that path.
+func (cv *converter) clashes(rel string) string {
+	base := strings.ToLower(path.Base(rel))
+	switch {
+	case base == "monica.js" || base == "monica.yml" || base == "monica.local.yml" || base == strings.ToLower(importer.ReportFile):
+		return "monica would treat a file named " + path.Base(rel) + " as its own"
+	case strings.EqualFold(path.Ext(rel), ".mon"):
+		return "monica would run a .mon file as requests"
+	case cv.taken[strings.ToLower(rel)]:
+		return "a generated file has that path"
+	}
+	if _, ok := cv.p.Extra[rel]; ok && !cv.copied[rel] {
+		return "a converted script has that path"
+	}
+	return ""
 }
 
 // fromMon returns rel (relative to the root) as seen from the .mon file.
