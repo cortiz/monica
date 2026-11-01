@@ -56,6 +56,17 @@ pm.test("ok: emptiness and length", () => { pm.expect(b.empty).to.be.empty; pm.e
 pm.test("ok: negation", () => { pm.expect(b.id).to.not.equal(8); pm.expect(b).to.not.have.property("missing"); pm.expect(b.ok).not.to.be.false; });
 pm.test("ok: json body", () => { pm.response.to.have.jsonBody("nested.list[0].v", 1); pm.response.to.have.jsonBody(); });
 pm.test("ok: variables", () => { pm.expect(pm.environment.get("obj")).to.equal('{"a":1}'); pm.expect(pm.collectionVariables.get("n")).to.equal("5"); pm.expect(pm.variables.replaceIn("n={{n}} x={{x}}")).to.equal("n=5 x={{x}}"); });
+pm.test("ok: chainable length and more", () => {
+  pm.expect(b.tags).to.have.length.above(1);
+  pm.expect(b.tags).to.have.lengthOf(2);
+  pm.expect(b.tags).to.not.have.length.above(5);
+  pm.expect(b.tags).to.have.members(["b", "a"]);
+  pm.expect(b).to.have.ownProperty("id");
+  pm.expect(b.name).to.have.string("da");
+  pm.expect(9.98).to.be.closeTo(10, 0.05);
+  pm.expect(b.tags).to.be.an.instanceOf(Array);
+  pm.expect(b).to.have.all.keys("id", "name", "tags", "nested", "empty", "none", "ok");
+});
 pm.test("fails: equal", () => pm.expect(b.id).to.equal(8));
 pm.test("fails: negated include", () => pm.expect(b.tags).to.not.include("a"));
 pm.test("fails: status", () => pm.response.to.have.status(200));
@@ -69,7 +80,7 @@ pm.test("fails: unsupported", () => pm.sendRequest("x"));
 	}
 	for _, want := range []string{
 		"✓ ok: status", "✓ ok: header", "✓ ok: equality", "✓ ok: types", "✓ ok: include", "✓ ok: properties", "✓ ok: numbers",
-		"✓ ok: emptiness and length", "✓ ok: negation", "✓ ok: json body", "✓ ok: variables",
+		"✓ ok: emptiness and length", "✓ ok: negation", "✓ ok: chainable length and more", "✓ ok: json body", "✓ ok: variables",
 		"✗ fails: equal", "expected 7 to equal 8",
 		"✗ fails: negated include", `expected ["a","b"] not to include "a"`,
 		"✗ fails: status", "expected response to have status code 200 but got 201",

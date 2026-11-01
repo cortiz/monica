@@ -264,3 +264,26 @@ func EnvName(key string) string {
 	}
 	return s
 }
+
+// EscapeSpaces encodes spaces in a URL as %20, except inside {{variables}}.
+func EscapeSpaces(u string) string {
+	var b strings.Builder
+	depth := 0
+	for i := 0; i < len(u); i++ {
+		switch {
+		case strings.HasPrefix(u[i:], "{{"):
+			depth++
+			b.WriteString("{{")
+			i++
+		case strings.HasPrefix(u[i:], "}}") && depth > 0:
+			depth--
+			b.WriteString("}}")
+			i++
+		case u[i] == ' ' && depth == 0:
+			b.WriteString("%20")
+		default:
+			b.WriteByte(u[i])
+		}
+	}
+	return b.String()
+}

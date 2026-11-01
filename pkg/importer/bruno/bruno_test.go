@@ -78,7 +78,7 @@ func TestAssertions(t *testing.T) {
 		{"endsWith", "x", `.to.match(new RegExp("x" + "$"))`},
 		{"between", "1, 9", ".to.be.within(1, 9)"},
 		{"isEmpty", "", ".to.be.empty"},
-		{"isDefined", "", ".to.exist"},
+		{"isDefined", "", ".to.not.be.undefined"},
 		{"isFalsy", "", ".to.not.be.ok"},
 		{"isArray", "", `.to.be.a("array")`},
 		{"isJson", "", `.to.be.an("object")`},
@@ -207,5 +207,60 @@ func TestConvertEdgeCases(t *testing.T) {
 	}
 	if !strings.Contains(d.PostScript, "// TODO(monica-import): assert res.status: weird 1") {
 		t.Errorf("d post = %q", d.PostScript)
+	}
+}
+
+func TestReviewFixes(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel, content string) {
+		p := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	outside := filepath.Join(t.TempDir(), "secret.key")
+	if err := os.WriteFile(outside, []byte("PRIVATE"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	write("bruno.json", `{"name": "R", "type": "collection"}`)
+	write(".env", "TOKEN=hunter2\n")
+	write("files/ok.txt", "fine")
+	if err := os.Symlink(outside, filepath.Join(dir, "files", "link.key")); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	write("a/folder.bru", "headers {\n  X-Level: outer\n  X-Outer: 1\n}\n")
+	write("a/b/folder.bru", "headers {\n  X-Level: inner\n}\n")
+	write("a/b/r.bru", "post {\n  url: https://h/{{ some var }}/a b\n  body: multipartForm\n}\n\nbody:multipart-form {\n  ok: @file(files/ok.txt)\n  env: @file(.env)\n  link: @file(files/link.key)\n}\n")
+	p, err := Convert(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := p.Files["a/b/r.mon"][0]
+	got := map[string]string{}
+	for _, h := range r.Headers {
+		got[h.Name] = h.Value
+	}
+	if got["X-Level"] != "inner" || got["X-Outer"] != "1" {
+		t.Errorf("folder headers = %v (inner folder must win)", got)
+	}
+	if r.URL != "https://h/{{ some var }}/a%20b" {
+		t.Errorf("url = %q", r.URL)
+	}
+	if p.Extra["files/ok.txt"] != "fine" {
+		t.Error("regular file not copied")
+	}
+	for path, content := range p.Extra {
+		if strings.Contains(content, "hunter2") || strings.Contains(content, "PRIVATE") {
+			t.Errorf("%s: secret content copied into the project", path)
+		}
+	}
+	report := strings.Join(p.Report, "\n")
+	for _, want := range []string{".env was not copied (hidden files are not copied)", "files/link.key was not copied (symbolic links are not copied)"} {
+		if !strings.Contains(report, want) {
+			t.Errorf("report lacks %q:\n%s", want, report)
+		}
 	}
 }

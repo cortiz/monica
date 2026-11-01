@@ -128,9 +128,47 @@ Assertion.prototype.property = function (name, value) {
   if (arguments.length < 2 && !this._not) this._v = cur;
   return this;
 };
-Assertion.prototype.lengthOf = Assertion.prototype.length = function (n) {
-  var v = this._v, len = v === null || v === undefined ? undefined : v.length;
-  return this._assert(len === n, "expected " + show(v) + " to have length " + n + " but got " + len, "expected " + show(v) + " not to have length " + n);
+// length / lengthOf work as a call (.lengthOf(2)) and as a chain
+// (.length.above(1)), like Chai's chainable methods.
+["length", "lengthOf"].forEach(function (name) {
+  Object.defineProperty(Assertion.prototype, name, {
+    get: function () {
+      var self = this, v = this._v, len = v === null || v === undefined ? undefined : v.length;
+      var chained = new Assertion(len);
+      chained._not = this._not;
+      var fn = function (n) {
+        return self._assert(len === n, "expected " + show(v) + " to have length " + n + " but got " + len, "expected " + show(v) + " not to have length " + n);
+      };
+      Object.setPrototypeOf(fn, chained);
+      return fn;
+    },
+  });
+});
+["all", "any", "contain", "itself"].forEach(function (w) {
+  if (!Object.getOwnPropertyDescriptor(Assertion.prototype, w)) {
+    Object.defineProperty(Assertion.prototype, w, { get: function () { return this; } });
+  }
+});
+Assertion.prototype.members = function (list) {
+  var v = this._v;
+  var ok = Array.isArray(v) && v.length === list.length && list.every(function (x) { return v.some(function (e) { return deepEqual(e, x); }); });
+  return this._assert(ok, "expected " + show(v) + " to have the same members as " + show(list), "expected " + show(v) + " not to have the same members as " + show(list));
+};
+Assertion.prototype.ownProperty = Assertion.prototype.haveOwnProperty = function (name) {
+  var v = this._v, ok = v !== null && v !== undefined && Object.prototype.hasOwnProperty.call(Object(v), name);
+  return this._assert(ok, "expected " + show(v) + " to have own property " + show(name), "expected " + show(v) + " not to have own property " + show(name));
+};
+Assertion.prototype.string = function (s) {
+  var v = this._v;
+  return this._assert(typeof v === "string" && v.indexOf(s) >= 0, "expected " + show(v) + " to contain " + show(s), "expected " + show(v) + " not to contain " + show(s));
+};
+Assertion.prototype.closeTo = Assertion.prototype.approximately = function (n, delta) {
+  var v = this._v;
+  return this._assert(Math.abs(v - n) <= delta, "expected " + show(v) + " to be close to " + n + " ± " + delta, "expected " + show(v) + " not to be close to " + n + " ± " + delta);
+};
+Assertion.prototype.instanceOf = Assertion.prototype.instanceof = function (C) {
+  var v = this._v;
+  return this._assert(v instanceof C, "expected " + show(v) + " to be an instance of " + (C && C.name), "expected " + show(v) + " not to be an instance of " + (C && C.name));
 };
 function compare(names, test, word) {
   names.forEach(function (name) {
@@ -148,10 +186,20 @@ Assertion.prototype.within = function (lo, hi) {
   var v = this._v;
   return this._assert(v >= lo && v <= hi, "expected " + show(v) + " to be within " + lo + ".." + hi, "expected " + show(v) + " not to be within " + lo + ".." + hi);
 };
-Assertion.prototype.a = Assertion.prototype.an = function (type) {
-  var v = this._v, t = typeName(v);
-  return this._assert(t === String(type).toLowerCase(), "expected " + show(v) + " to be a " + type + " but got " + t, "expected " + show(v) + " not to be a " + type);
-};
+// a / an work as a call (.an("array")) and as a chain (.an.instanceOf(X)).
+["a", "an"].forEach(function (name) {
+  Object.defineProperty(Assertion.prototype, name, {
+    get: function () {
+      var self = this;
+      var fn = function (type) {
+        var v = self._v, t = typeName(v);
+        return self._assert(t === String(type).toLowerCase(), "expected " + show(v) + " to be a " + type + " but got " + t, "expected " + show(v) + " not to be a " + type);
+      };
+      Object.setPrototypeOf(fn, self);
+      return fn;
+    },
+  });
+});
 Assertion.prototype.match = Assertion.prototype.matches = function (re) {
   var v = this._v;
   return this._assert(re.test(String(v)), "expected " + show(v) + " to match " + re, "expected " + show(v) + " not to match " + re);
