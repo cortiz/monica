@@ -75,6 +75,7 @@ func TestSplit(t *testing.T) {
 		{"plain", "curl -X GET http://h", []string{"curl", "-X", "GET", "http://h"}, 0},
 		{"single quotes", `curl 'a b' 'it''s'`, []string{"curl", "a b", "its"}, 0},
 		{"double quotes", `curl "a \"b\" \\ \$x \n"`, []string{"curl", `a "b" \ $x \n`}, 0},
+		{"ansi-c out of range", `$'\777\UFFFFFFFF\U0010FFFF\x4'`, []string{"\xff\ufffd\U0010ffff\x04"}, 0},
 		{"ansi-c", `$'a\nb\t\'c\x41é\101'`, []string{"a\nb\t'cAéA"}, 0},
 		{"continuation", "curl \\\n  -s \\\r\n  url", []string{"curl", "-s", "url"}, 0},
 		{"windows caret", "curl ^\r\n  -s ^\n  url", []string{"curl", "-s", "url"}, 0},
