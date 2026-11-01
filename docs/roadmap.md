@@ -310,7 +310,7 @@ Independent tracks: they can be picked up in any order once their prerequisites 
 | ID | Task | Size | Needs |
 |----|------|------|-------|
 | 9.1 | TUI (`monica tui`) ✅ | L | Phases 1, 2 (better with 4) |
-| 9.2 | Import from Postman | L | Phases 1, 2 (scripts: 3–4) |
+| 9.2 | Import from Postman ✅ | L | Phases 1, 2 (scripts: 3–4) |
 | 9.3 | Import from Bruno | L | Phases 1, 2 (scripts: 3–4) |
 
 **9.1 TUI** — interactive terminal UI over the same runner (no separate logic).
@@ -343,6 +343,13 @@ Independent tracks: they can be picked up in any order once their prerequisites 
   (`pm.test`, `pm.expect` subset, `pm.response.json()/code/headers`, `pm.environment/collectionVariables.get/set`).
   Unsupported calls → `// TODO(monica-import):` comments + a summary warning.
 - ✅ Done when: fixture collections (simple, nested folders, auth, scripts) import and the result runs; import report lists everything not converted.
+- ✅ Done: `monica import postman` (`pkg/importer/postman`) on the shared `importer.Project` /
+  `WriteProject` (files, hooks, `monica.yml`, `IMPORT_REPORT.md`, `.env.example`). Folders →
+  directories, one `.mon` per request in `order:`; variables and environments with secrets
+  as `${NAME}`; bearer / basic / API key / OAuth 2.0 token auth with inheritance; raw,
+  urlencoded, form-data, file and GraphQL bodies; scripts behind a `pm` shim
+  (`lib/monica-postman.js`); collection and folder scripts as `monica.js` hooks. The fixture
+  collection imports and runs end to end against a stand-in API (`pkg/cmd`).
 
 **9.3 Import from Bruno** — `monica import bruno <collection-dir> --out ./dir`
 - 9.3.1 Write a `.bru` parser (Bru lang has no Go library): `meta`, `get/post/…`, `headers`,

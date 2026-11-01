@@ -84,6 +84,39 @@ HTTP, like curl or Bruno), **tests them with JavaScript** (embedded, no Node.js)
 	a body ending in blank lines before another URL's request) are errors. Text such as `{{x}}` is kept and
 	warned about, since monica reads it as a variable.
 
+* Import a Postman collection (export it as **Collection v2.1**), with its environments
+	```bash
+	monica import postman shop.postman_collection.json --env dev.postman_environment.json -o shop
+	cd shop && monica run -r 3 --env shop-dev
+	```
+	* **Layout** — folders become directories and each request a `.mon` file (`### name`,
+	  `# @name`), listed in `order:` so they run in collection order. Collection and folder
+	  scripts become [`monica.js` hooks](#folder-hooks-monicajs) (`beforeEach` / `afterEach`).
+	* **Variables** — collection variables go to `defaults.vars`, each `--env` file to
+	  `envs.<name>` (the environment's name as a slug). Values of type *secret* are never
+	  written: they become `${NAME}` placeholders (listed in `.env.example`; `.env` is added to
+	  `.gitignore`). `{{var}}` syntax is the same; `{{$guid}}` / `{{$randomUUID}}` become
+	  `{{$uuid}}`, `{{$timestamp}}` and `{{$randomInt}}` stay, other dynamic variables are reported.
+	* **Requests** — URLs (disabled query parameters dropped, `:path` variables filled), enabled
+	  headers, bodies (raw with its content type, urlencoded, form-data with `< file` parts,
+	  file, GraphQL as JSON) and auth: bearer, basic (computed in a pre-request script when it
+	  uses variables), API key (header or query), OAuth 2.0's stored access token; auth is
+	  inherited from folders and the collection. Other auth types are reported.
+	* **Scripts** — pre-request and test scripts are copied into `< {% %}` / `> {% %}` blocks
+	  (or `.js` files when they contain `%}`) behind `const pm = require("monica-postman")();`,
+	  a compatibility module written to `lib/` (`scripts.paths`). It supports `pm.test`,
+	  `pm.expect` (Chai BDD subset: `equal`, `eql`, `include`, `property` / `nested.property`,
+	  `lengthOf`, `above` / `below` / `within`, `a` / `an`, `match`, `oneOf`, `keys`, `empty`,
+	  `true` / `false` / `null` / `ok`, `not`, `deep`), `pm.response` (`code`, `status`,
+	  `json()`, `text()`, `headers`, `to.have.status/header/jsonBody`, `to.be.ok/success/...`),
+	  `pm.request.headers.add/upsert/remove` and `pm.environment` / `collectionVariables` /
+	  `globals` / `variables` / `iterationData` (all monica `vars`). `pm.sendRequest`,
+	  `setNextRequest`, the legacy `postman.*` / `tests[...]` API, `pm.cookies`, timers and
+	  sandbox libraries get a `// TODO(monica-import):` line and a report entry.
+	* **Report** — `IMPORT_REPORT.md` lists everything not converted or converted with changes
+	  (secrets to set, files to copy from the author's machine, unsupported auth or script
+	  features). The output folder must be empty unless `-f, --force`.
+
 * Runs all `mon` files in the current directory
 	```bash
 	monica run 
