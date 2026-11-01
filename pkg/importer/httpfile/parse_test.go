@@ -74,6 +74,13 @@ func TestParse(t *testing.T) {
 				Problems: []string{"line 2: not a header: not a header line", "line 6: text after the response handler: stray text"}}},
 		},
 		{
+			name: "unclosed {% block takes the rest of the file and is reported",
+			in:   "GET https://h/a\n\n> {%\n  client.log(1)\n###\nGET https://h/b\n",
+			want: []*Request{{Line: 1, Method: "GET", URL: "https://h/a",
+				Post:     []Script{{Code: "  client.log(1)\n###\nGET https://h/b", Line: 3}},
+				Problems: []string{"line 3: {% block has no closing %}; it takes the rest of the file: > {%"}}},
+		},
+		{
 			name: "sections without a request are skipped",
 			in:   "### only comments\n# nothing here\n\n### real\nDELETE https://h/1\n",
 			want: []*Request{{Line: 5, Title: "real", Method: "DELETE", URL: "https://h/1"}},

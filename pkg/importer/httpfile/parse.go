@@ -135,7 +135,7 @@ func (p *parser) section(title string) {
 			continue
 		}
 		if strings.HasPrefix(t, "<") {
-			if s, ok := p.script(t[1:]); ok {
+			if s, ok := p.script(r, t[1:]); ok {
 				r.Pre = append(r.Pre, s)
 				continue
 			}
@@ -227,7 +227,7 @@ func (p *parser) post(r *Request, t string) bool {
 		if !strings.HasPrefix(rest, "{%") && (rest == "" || strings.ContainsAny(rest, " \t") || !looksLikePath(rest)) {
 			return false
 		}
-		if s, ok := p.script(t[1:]); ok {
+		if s, ok := p.script(r, t[1:]); ok {
 			r.Post = append(r.Post, s)
 			return true
 		}
@@ -264,7 +264,9 @@ func (p *parser) after(r *Request) {
 
 // script reads "{% ... %}" (possibly over several lines) or a path, from the
 // text after "<" / ">" on the current line; p.i ends on the block's last line.
-func (p *parser) script(rest string) (Script, bool) {
+// A block without "%}" runs to the end of the file (swallowing any later
+// requests), which is reported on r.
+func (p *parser) script(r *Request, rest string) (Script, bool) {
 	rest = strings.TrimSpace(rest)
 	line := p.i + 1
 	if !strings.HasPrefix(rest, "{%") {
@@ -281,15 +283,20 @@ func (p *parser) script(rest string) (Script, bool) {
 	if strings.TrimSpace(rest) != "" {
 		code = append(code, rest)
 	}
+	closed := false
 	for p.i++; p.i < len(p.lines); p.i++ {
 		l := p.lines[p.i]
 		if end := strings.Index(l, "%}"); end >= 0 {
 			if strings.TrimSpace(l[:end]) != "" {
 				code = append(code, l[:end])
 			}
+			closed = true
 			break
 		}
 		code = append(code, l)
+	}
+	if !closed {
+		r.Problems = append(r.Problems, lineProblem(line, "{% block has no closing %}; it takes the rest of the file", strings.TrimSpace(p.lines[line-1])))
 	}
 	return Script{Code: dedent(code), Line: line}, true
 }
