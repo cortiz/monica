@@ -35,6 +35,7 @@ var (
 	loadQuiet        bool
 	loadInsecure     bool
 	loadNoKeepAlive  bool
+	loadTLS          tlsFlags
 
 	loadCmd = &cobra.Command{
 		Use:   "load",
@@ -66,6 +67,7 @@ func init() {
 	f.StringArrayVar(&loadStages, "stage", nil, "ramp step duration:target, e.g. 30s:50; targets are VUs, or iterations/s with --rate (repeatable; replaces load.stages)")
 	f.StringVarP(&loadOut, "out", "o", "", "also write a JSON report to this file; \"-\" prints it on stdout instead of the text summary")
 	f.BoolVarP(&loadInsecure, "insecure", "k", false, "skip TLS certificate verification (like insecureSkipVerify in monica.yml)")
+	loadTLS.register(loadCmd)
 	f.BoolVar(&loadNoKeepAlive, "no-keepalive", false, "open a new connection for every request instead of reusing them")
 	f.BoolVarP(&loadQuiet, "quiet", "q", false, "no live progress line (it is only shown when stderr is a terminal)")
 	f.StringArrayVar(&loadThresholds, "threshold", nil, "pass/fail condition such as \"p95<300ms\", \"login:errors<1%\" or \"rps>100\" (repeatable; replaces load.thresholds)")
@@ -83,6 +85,9 @@ func runLoad(cmd *cobra.Command, _ []string) error {
 		env = os.Getenv(config.EnvVar)
 	}
 	ropts := runner.Opts{Env: env, Vars: vars, ConfigPath: loadConfig, Filters: loadFilters, Insecure: loadInsecure}
+	if err := loadTLS.apply(&ropts); err != nil {
+		return &exitError{code: ExitUsage, err: err}
+	}
 
 	opts, thresholds, err := loadOptions(cmd.Flags().Changed, loadConfig)
 	if err != nil {

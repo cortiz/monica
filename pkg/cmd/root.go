@@ -19,9 +19,11 @@ const (
 )
 
 // exitError carries the exit code a command failure should produce.
+// silent means the command already printed what went wrong.
 type exitError struct {
-	code int
-	err  error
+	code   int
+	err    error
+	silent bool
 }
 
 func (e *exitError) Error() string { return e.err.Error() }
@@ -30,9 +32,11 @@ func (e *exitError) Unwrap() error { return e.err }
 var (
 	debug   bool
 	rootCmd = &cobra.Command{
-		Use:           "monica",
-		Short:         "Monica is a CLI tool to manage Network Requests",
-		Long:          `Monica is a CLI tool to manage Network Requests like http, grpc, etc.`,
+		Use:   "monica",
+		Short: "Monica runs, tests and load-tests HTTP requests written in plain-text .mon files",
+		Long: `Monica runs HTTP requests written as plain-text .mon files (raw request
+text plus a few directives), tests their responses with JavaScript or
+TypeScript scripts, and load-tests them with virtual users.`,
 		Version:       version.Get(),
 		SilenceErrors: true, // Execute prints errors itself
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -49,7 +53,7 @@ var (
 )
 
 func init() {
-	rootCmd.AddCommand(run)
+	rootCmd.AddCommand(run, validateCmd)
 	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "Enable Debug logging")
 }
 
@@ -59,10 +63,15 @@ func Execute() int {
 }
 
 func execute(cmd *cobra.Command, args []string, stderr io.Writer) int {
+	registerCompletionsOnce.Do(registerCompletions)
 	cmd.SetArgs(args)
 	err := cmd.Execute()
 	if err == nil {
 		return ExitOK
+	}
+	var ee *exitError
+	if errors.As(err, &ee) && ee.silent {
+		return ee.code
 	}
 	_, _ = fmt.Fprintln(stderr, "Error:", err)
 	return exitCode(err)

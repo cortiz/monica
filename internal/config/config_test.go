@@ -79,6 +79,12 @@ func TestLoadErrors(t *testing.T) {
 		{"order entry outside", "version: 1\norder: [../a.mon]\n", "order: \"../a.mon\" is outside"},
 		{"order entry outside after clean", "version: 1\norder: [a/../../b]\n", "is outside"},
 		{"duplicate order entry", "version: 1\norder: [users, ./users/]\n", "order: duplicate entry \"./users/\""},
+		{"client cert without key", "version: 1\ndefaults:\n  tls:\n    clientCert: client.pem\n", "defaults.tls: clientCert \"client.pem\" is set without clientKey"},
+		{"client key without cert", "version: 1\nenvs:\n  dev:\n    tls: {clientKey: k.pem}\n", "envs.dev.tls: clientKey \"k.pem\" is set without clientCert"},
+		{"unknown tls key", "version: 1\ndefaults:\n  tls:\n    cert: c.pem\n", "line 4: field cert not found"},
+		{"proxy with a bad scheme", "version: 1\ndefaults:\n  proxy: ftp://u:hunter2@proxy:21\n", "defaults.proxy: invalid proxy URL \"ftp://xxxxx@proxy:21\""},
+		{"proxy without host", "version: 1\nenvs:\n  dev:\n    proxy: http://\n", "envs.dev.proxy: invalid proxy URL \"http:\": missing host"},
+		{"proxy that is not a URL", "version: 1\ndefaults:\n  proxy: proxy.local:3128\n", "defaults.proxy: invalid proxy URL"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

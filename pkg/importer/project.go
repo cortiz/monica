@@ -48,8 +48,9 @@ type Config struct {
 
 // ConfigSettings are monica.yml defaults.
 type ConfigSettings struct {
-	Headers map[string]string `yaml:"headers,omitempty"`
-	Vars    map[string]string `yaml:"vars,omitempty"`
+	FollowRedirects *bool             `yaml:"followRedirects,omitempty"`
+	Headers         map[string]string `yaml:"headers,omitempty"`
+	Vars            map[string]string `yaml:"vars,omitempty"`
 }
 
 // Settings are one environment of monica.yml.

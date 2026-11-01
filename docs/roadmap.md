@@ -4,7 +4,7 @@ Goal: one Go binary that **runs HTTP requests** (like curl/Bruno), **tests them 
 JavaScript** (embedded goja, no Node.js), and **load-tests** the same files (like k6).
 
 Each task is sized to be one PR: code + `testdata/*.mon` fixture + table-driven tests +
-`Readme.md` update when the `.mon` format or CLI changes (see `CLAUDE.md`).
+docs update (`docs/*.md`, formerly `Readme.md`) when the `.mon` format or CLI changes (see `CLAUDE.md`).
 
 Legend: **S** < half a day · **M** ~1 day · **L** 2–3 days · 🔒 needs dependency approval
 
@@ -378,6 +378,56 @@ so each source only implements parsing.
 
 ---
 
+## Phase 10 — 1.0.0 readiness
+
+Close the gaps that make people reject Monica during an evaluation against `.http` clients
+(JetBrains / VS Code REST Client, httpyac), Hurl, Bruno and k6. Stdlib only: no new dependencies.
+
+| ID | Task | Size |
+|----|------|------|
+| 10.1 | Import `.http` / `.rest` files | L |
+| 10.2 | Client certificates (mTLS) and custom CA | M |
+| 10.3 | Explicit proxy setting | S |
+| 10.4 | `monica validate` | M |
+| 10.5 | Shell completion with flag values | S |
+| 10.6 | Accurate CLI description (no gRPC claim) | S |
+| 10.7 | Docs site on GitHub Pages | M |
+
+**10.1 `.http` import** — `monica import http <file|dir>`: JetBrains HTTP Client and VS Code
+REST Client files → `.mon` files + `monica.yml` on the shared `importer.Project` writer.
+`###` titles, `@name` and other directives, file variables (`@x = 1`), env files
+(`http-client.env.json`, private values as `${NAME}`), dynamic variables, VS Code request
+variables (`{{login.response.body.$.token}}` → `vars.set` scripts) and JetBrains scripts
+behind a `client` / `response` shim (`lib/monica-http.js`). Unconverted items in `IMPORT_REPORT.md`.
+
+**10.2 TLS** — `tls: {clientCert, clientKey, caCert}` in `defaults` / `envs.<name>`, and
+`--cert`, `--key`, `--cacert` on `run`, `load` and `tui`. The CA is added to the system pool;
+files are loaded once, before the first request; a half-configured pair is an input error.
+
+**10.3 Proxy** — `proxy:` in `defaults` / `envs.<name>` and `--proxy` (http, https, socks5;
+`none` disables the `*_PROXY` environment variables). Credentials in the URL are masked.
+
+**10.4 `monica validate`** — same selection flags as `run`; reports syntax errors, invalid
+config or environment, missing body/script files, JS/TS compile errors and unresolvable
+`{{variables}}` (names set by `vars.set` or by `--data` columns are not flagged) without
+sending anything. Exit `0` / `2`.
+
+**10.5 Completion** — `monica completion bash|zsh|fish|powershell` (cobra), plus values for
+`--env` (from `monica.yml`), `-s` (`.mon` files), `--data` and `--reporter`.
+
+**10.6 Description** — root command text says what Monica does: run, test and load-test
+HTTP requests from `.mon` files.
+
+**10.7 Docs site** — `Readme.md` split into MkDocs (Material) pages under `docs/`, built with
+`--strict` on PRs and published to GitHub Pages from `main` (`.github/workflows/docs.yml`).
+The Readme keeps the overview, features and install, and links to the site.
+
+Later (1.x): VS Code extension and `monica.yml` JSON Schema, OpenAPI / HAR import, load
+metrics outputs (Prometheus remote-write, InfluxDB), HTML report, `run --watch`,
+Hurl-style assertion shorthand.
+
+---
+
 ## Dependency summary
 
 | Dependency | Phase | Status |
@@ -392,7 +442,7 @@ Postman and Bruno import need no new dependencies (stdlib JSON + hand-written `.
 
 ## Suggested order
 
-`0.x → … → 9.x`: every phase is done.
+`0.x → … → 9.x`: done. Phase 10 is the 1.0.0 release gate.
 
 1.3 landed before Phase 2 as parse-only. `%}` still can't appear inside a `{% %}` block;
 the importers write such scripts to `.js` files instead.

@@ -1,0 +1,25 @@
+@baseUrl = https://httpbin.org
+
+### Create todo
+# @name createTodo
+POST {{baseUrl}}/post
+Content-Type: application/json
+
+{"title": "buy-milk", "id": "{{$random.uuid}}"}
+
+> {%
+    client.test("created", function () {
+        client.assert(response.status === 200, "status " + response.status);
+        client.assert(response.body.json.title === "buy-milk", "title");
+    });
+    client.global.set("todoTitle", response.body.json.title);
+%}
+
+### Find todo
+GET {{baseUrl}}/get
+    ?title={{todoTitle}}
+    &at={{$isoTimestamp}}
+
+> {%
+    client.test("found", () => client.assert(response.body.args.title === client.global.get("todoTitle"), "title"));
+%}

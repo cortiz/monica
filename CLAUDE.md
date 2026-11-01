@@ -22,7 +22,7 @@ Module: `jmpeax.com/sec/monica` · Go 1.27 · cobra + zerolog.
 - New parser behaviour needs a `testdata/*.mon` fixture and a table-driven test.
 - Return errors, don't `log.Fatal`/`panic` in `pkg/`.
 - No new dependencies without asking.
-- Keep the `.mon` format in `Readme.md` in sync with parser changes.
+- User docs live in `docs/*.md` (MkDocs site, `mkdocs.yml`; `Readme.md` is a short overview). Keep `docs/format.md` in sync with parser changes and the relevant page in sync with CLI/config changes; `make docs-build` must pass.
 
 ## Claude workflow
 Subagents live in `.claude/agents/`, skills in `.claude/skills/`.

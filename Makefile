@@ -99,3 +99,13 @@ help:
 	@echo "  release     - Creates a release with goreleaser."
 	@echo "  snapshot    - Builds the release archives into dist/ without publishing."
 	@echo "  docker      - Builds the Docker image monica:VERSION."
+
+# Serves the docs site locally (pip install -r docs/requirements.txt first).
+.PHONY: docs
+docs:
+	mkdocs serve
+
+# Builds the docs site into site/, failing on broken links.
+.PHONY: docs-build
+docs-build:
+	mkdocs build --strict

@@ -29,6 +29,7 @@ var DefaultUserAgent = version.UserAgent()
 type Client struct {
 	http    *http.Client
 	timeout time.Duration
+	err     error // from NewClient: returned by every request
 }
 
 // Options configure a Client.
@@ -41,6 +42,13 @@ type Options struct {
 	// InsecureSkipVerify disables TLS certificate verification. Opt-in only,
 	// for self-signed development servers.
 	InsecureSkipVerify bool
+	// ClientCert and ClientKey are PEM files with a client certificate
+	// (mTLS) and its key; CACert is a PEM file of CAs trusted in addition
+	// to the system ones. See TransportConfig.
+	ClientCert, ClientKey, CACert string
+	// Proxy is "" for the HTTP(S)_PROXY environment variables, ProxyNone
+	// for no proxy, or a proxy URL.
+	Proxy string
 	// Transports, when set, supplies the (shared) transport instead of one
 	// per Client.
 	Transports *Transports
@@ -49,21 +57,52 @@ type Options struct {
 	Jar http.CookieJar
 }
 
-// NewClient returns a Client configured by opts.
-func NewClient(opts Options) *Client {
+// New returns a Client configured by opts. Certificate files are read
+// here (or on the shared transport's first use), so bad TLS or proxy
+// settings fail before any request is sent.
+func New(opts Options) (*Client, error) {
 	hc := &http.Client{Jar: opts.Jar}
 	if opts.NoFollowRedirects {
 		hc.CheckRedirect = func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		}
 	}
+	cfg := opts.transportConfig()
 	switch {
 	case opts.Transports != nil:
-		hc.Transport = opts.Transports.get(opts.InsecureSkipVerify)
-	case opts.InsecureSkipVerify:
-		hc.Transport = newTransport(TransportOptions{}, true)
+		tr, err := opts.Transports.get(cfg)
+		if err != nil {
+			return nil, err
+		}
+		hc.Transport = tr
+	case cfg != TransportConfig{}:
+		tr, err := newTransport(TransportOptions{}, cfg)
+		if err != nil {
+			return nil, err
+		}
+		hc.Transport = tr
 	}
-	return &Client{http: hc, timeout: opts.Timeout}
+	return &Client{http: hc, timeout: opts.Timeout}, nil
+}
+
+// NewClient is New for callers that can't handle an error there: a
+// Client whose settings are invalid returns that error from every request.
+func NewClient(opts Options) *Client {
+	c, err := New(opts)
+	if err != nil {
+		return &Client{err: err}
+	}
+	return c
+}
+
+func (o Options) transportConfig() TransportConfig {
+	return TransportConfig{
+		InsecureSkipVerify: o.InsecureSkipVerify,
+		ClientCert:         o.ClientCert,
+		ClientKey:          o.ClientKey,
+		CACert:             o.CACert,
+		Proxy:              o.Proxy,
+	}
 }
 
 var defaultClient = NewClient(Options{Timeout: DefaultTimeout})
@@ -81,6 +120,9 @@ func (c *Client) Do(request *request.Request, headerOnly bool) (*HTTPResponse, e
 
 // DoContext is Do with a context: cancelling ctx aborts the request.
 func (c *Client) DoContext(ctx context.Context, request *request.Request, headerOnly bool) (*HTTPResponse, error) {
+	if c.err != nil {
+		return nil, c.err
+	}
 	if request == nil {
 		return nil, errors.New("nil request")
 	}

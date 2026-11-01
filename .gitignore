@@ -22,3 +22,6 @@ dist/
 # Claude Code personal overrides
 .claude/settings.local.json
 .claude/worktrees/
+
+# Docs site build output
+/site/

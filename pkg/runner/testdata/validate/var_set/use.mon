@@ -1,0 +1,4 @@
+# @name me
+GET https://example.test/me
+Authorization: Bearer {{token}}
+

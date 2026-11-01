@@ -1,0 +1,3 @@
+version: 1
+defaults:
+  tls: { clientCert: ./nope.pem, clientKey: ./nope.key }
