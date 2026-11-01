@@ -136,7 +136,7 @@ func (r *reqObject) writeBack(req *request.Request) error {
 	req.Method = method
 	req.URL = r.obj.Get("url").String()
 	if body := r.obj.Get("body").String(); body != req.Body {
-		req.Body, req.BodyFile = body, "" // a script-set body is no longer the file's
+		req.Body, req.BodyFile, req.Parts = body, "", nil // a script-set body is no longer the file's
 	}
 	req.Headers = r.headers
 	if r.skip {

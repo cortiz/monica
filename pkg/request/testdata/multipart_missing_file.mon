@@ -1,0 +1,8 @@
+POST http://example.com/upload
+Content-Type: multipart/form-data; boundary=b
+
+--b
+Content-Disposition: form-data; name="f"; filename="x"
+
+< ./payloads/nope.bin
+--b--

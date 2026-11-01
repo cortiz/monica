@@ -41,6 +41,7 @@ Monica is designed to handle Network requests and responses.
 	| `-G`, `--get`, `--url-query` | data appended to the URL query |
 	| `-u user:pass`, `--oauth2-bearer` | `Authorization: Basic …` / `Bearer …` header |
 	| `-A`, `-e`, `-b name=value` | `User-Agent`, `Referer`, `Cookie` headers |
+	| `-F name=value`, `-F name=@file[;type=…][;filename=…]`, `-F name=<file`, `--form-string` | [multipart body](#multipart-bodies) (`< file` parts; a file's type is guessed from its extension) |
 	| `-m`, `--max-time` | `# @timeout` |
 	| several URLs | one request each, separated by `###` |
 
@@ -48,7 +49,7 @@ Monica is designed to handle Network requests and responses.
 	(`-s`, `-v`, `-L`, `--compressed`, `-o`, …) are dropped; others (`-k`, `--proxy`, cookie
 	files, unknown options) are dropped with a warning on stderr, as are shell variables
 	(`$TOKEN`, kept as text) and anything after an unquoted `|`, `;`, `&`, `<` or `>`.
-	`-F`/`--form`, `-H @file` and data from stdin are errors. Text such as `{{x}}` is kept and
+	`-H @file` and data from stdin are errors. Text such as `{{x}}` is kept and
 	warned about, since monica reads it as a variable.
 
 * Runs all `mon` files in the current directory
@@ -99,6 +100,12 @@ Monica is designed to handle Network requests and responses.
 | `-q, --quiet` | Hide response headers and bodies in the console report |
 | `--data <file>` | Run once per row of a `.csv` or `.json` file, with the row's values as variables |
 | `-k, --insecure` | Skip TLS certificate verification (as `insecureSkipVerify: true` in every config) |
+| `--no-cookies` | Don't keep cookies between requests |
+
+**Cookies** — a run keeps one cookie jar: cookies a response sets (`Set-Cookie`) are sent on
+later requests to matching hosts and paths, in the same file or later ones (and later
+`--data` rows), as a browser would. A `Cookie` header written in a request is sent as well.
+`--no-cookies` turns the jar off. Under `monica load` each VU has its own jar.
 
 The report goes to stdout; logs and errors go to stderr. For each request it prints a status
 line, the response, and ✓/✗ per test (with the failure message), then a summary:
@@ -592,6 +599,16 @@ a failing request does not stop the ones after it.
   replaced by the contents of that file, byte for byte. Relative paths are resolved from the
   `.mon` file's directory. A missing file is an input error (`file:line`). Any other body,
   including one with more lines after the `< path` line, is sent literally.
+* **Multipart bodies** — with a `Content-Type: multipart/…; boundary=…` header (written
+  literally, not through a `{{variable}}`), the body is a list of parts written as raw HTTP:
+  each part opens with a `--boundary` line, then its headers, a blank line and its content;
+  a `--boundary--` line ends the body. Lines are sent with `\r\n` endings, as multipart
+  requires, whatever the file uses. A part whose content is a single `< path` line is replaced
+  by that file's contents, byte for byte (relative to the `.mon` file; `{{variables}}` are not
+  expanded inside it); other content is text. The boundary parameter is required, the body
+  must start with `--boundary` and end with `--boundary--` (blank lines around it aside), and
+  each part needs the blank line after its headers; anything else is an input error
+  (`file:line`). See [the example](#example).
 * **Separator** — any line starting with `###` ends the current request and starts a new one,
   even inside a body. Text after the `###` is the request's title (used in logs and errors).
   Sections with no request line (only comments or blank lines) are ignored.
@@ -662,6 +679,23 @@ POST http://example.com/users
 Content-Type: application/json
 
 < ./payloads/user.json
+```
+
+```
+### Upload a file with a form field (multipart)
+POST http://example.com/upload
+Content-Type: multipart/form-data; boundary=MonicaBoundary
+
+--MonicaBoundary
+Content-Disposition: form-data; name="title"
+
+Users for {{env}}
+--MonicaBoundary
+Content-Disposition: form-data; name="file"; filename="users.csv"
+Content-Type: text/csv
+
+< ./payloads/users.csv
+--MonicaBoundary--
 ```
 
 ```

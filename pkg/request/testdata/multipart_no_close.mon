@@ -1,0 +1,7 @@
+POST http://example.com/upload
+Content-Type: multipart/form-data; boundary=b
+
+--b
+Content-Disposition: form-data; name="a"
+
+1
