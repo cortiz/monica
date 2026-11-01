@@ -1,0 +1,7 @@
+# The certificate and key are replaced together; caCert stays from monica.yml.
+envs:
+  local:
+    tls:
+      clientCert: mine.pem
+      clientKey: /home/me/mine-key.pem
+    proxy: none

@@ -33,8 +33,13 @@ type Resolved struct {
 	Timeout            time.Duration
 	FollowRedirects    bool
 	InsecureSkipVerify bool
-	Headers            map[string]string
-	Vars               map[string]string
+	// ClientCert, ClientKey and CACert are absolute paths ("" = unset).
+	ClientCert, ClientKey, CACert string
+	// Proxy is "" for the HTTP(S)_PROXY environment variables, ProxyNone
+	// for no proxy, or a proxy URL.
+	Proxy   string
+	Headers map[string]string
+	Vars    map[string]string
 	// Secrets are the values substituted for ${NAME} references, so they
 	// can be masked in output.
 	Secrets []string
@@ -81,6 +86,9 @@ func (c *Config) Resolve(env string, lookup LookupFunc) (*Resolved, error) {
 	}
 
 	x := &expander{lookup: lookup, dotEnv: c.DotEnv}
+	if err := c.resolveTransport(s, x, r); err != nil {
+		return nil, err
+	}
 	for _, k := range sortedKeys(s.Headers) {
 		v, err := x.expand(s.Headers[k])
 		if err != nil {
@@ -97,6 +105,53 @@ func (c *Config) Resolve(env string, lookup LookupFunc) (*Resolved, error) {
 	}
 	r.Secrets = x.secrets
 	return r, nil
+}
+
+// resolveTransport expands and checks the tls and proxy settings into r.
+// Relative certificate paths are relative to the config's folder.
+func (c *Config) resolveTransport(s Settings, x *expander, r *Resolved) error {
+	if s.TLS != nil {
+		files := []struct {
+			key, in string
+			out     *string
+		}{
+			{"clientCert", s.TLS.ClientCert, &r.ClientCert},
+			{"clientKey", s.TLS.ClientKey, &r.ClientKey},
+			{"caCert", s.TLS.CACert, &r.CACert},
+		}
+		for _, f := range files {
+			if f.in == "" {
+				continue
+			}
+			v, err := x.expand(f.in)
+			if err != nil {
+				return fmt.Errorf("%s: tls.%s: %w", c.Path, f.key, err)
+			}
+			if v == "" {
+				return fmt.Errorf("%s: tls.%s: %q expands to an empty path", c.Path, f.key, f.in)
+			}
+			if !filepath.IsAbs(v) {
+				if v, err = filepath.Abs(filepath.Join(filepath.Dir(c.Path), v)); err != nil {
+					return fmt.Errorf("%s: tls.%s: %w", c.Path, f.key, err)
+				}
+			}
+			*f.out = v
+		}
+		if err := (&TLSSettings{ClientCert: r.ClientCert, ClientKey: r.ClientKey}).validate(); err != nil {
+			return fmt.Errorf("%s: tls: %w", c.Path, err)
+		}
+	}
+	if s.Proxy != nil {
+		v, err := x.expand(*s.Proxy)
+		if err != nil {
+			return fmt.Errorf("%s: proxy: %w", c.Path, err)
+		}
+		if r.Proxy, err = ParseProxy(v); err != nil {
+			return fmt.Errorf("%s: proxy: %w", c.Path, err)
+		}
+		x.secrets = append(x.secrets, ProxySecrets(r.Proxy)...)
+	}
+	return nil
 }
 
 func definedEnvs(envs map[string]Settings) string {
@@ -151,6 +206,23 @@ func mergeSettings(base, over Settings) Settings {
 	}
 	if over.InsecureSkipVerify != nil {
 		base.InsecureSkipVerify = over.InsecureSkipVerify
+	}
+	if over.TLS != nil {
+		t := TLSSettings{}
+		if base.TLS != nil {
+			t = *base.TLS
+		}
+		// The certificate and its key are replaced together.
+		if over.TLS.ClientCert != "" || over.TLS.ClientKey != "" {
+			t.ClientCert, t.ClientKey = over.TLS.ClientCert, over.TLS.ClientKey
+		}
+		if over.TLS.CACert != "" {
+			t.CACert = over.TLS.CACert
+		}
+		base.TLS = &t
+	}
+	if over.Proxy != nil {
+		base.Proxy = over.Proxy
 	}
 	base.Headers = mergeMaps(base.Headers, over.Headers)
 	base.Vars = mergeMaps(base.Vars, over.Vars)
