@@ -193,6 +193,9 @@ func (cv *converter) url(u URL, file string) string {
 			raw = u.Protocol + "://"
 		}
 		raw += strings.Join(u.Host, ".")
+		if u.Port != "" {
+			raw += ":" + u.Port
+		}
 		if len(u.Path) > 0 {
 			raw += "/" + strings.Join(u.Path, "/")
 		}
@@ -238,7 +241,7 @@ func (cv *converter) url(u URL, file string) string {
 	if !strings.Contains(raw, "://") && !strings.HasPrefix(raw, "{{") {
 		raw = "http://" + raw // Postman's default scheme
 	}
-	return cv.text(strings.ReplaceAll(raw, " ", "%20"), file)
+	return cv.text(importer.EscapeSpaces(raw), file)
 }
 
 func hasDisabled(kvs []KV) bool {
