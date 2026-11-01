@@ -4,7 +4,7 @@ Goal: one Go binary that **runs HTTP requests** (like curl/Bruno), **tests them 
 JavaScript** (embedded goja, no Node.js), and **load-tests** the same files (like k6).
 
 Each task is sized to be one PR: code + `testdata/*.mon` fixture + table-driven tests +
-`Readme.md` update when the `.mon` format or CLI changes (see `CLAUDE.md`).
+docs update (`docs/*.md`, formerly `Readme.md`) when the `.mon` format or CLI changes (see `CLAUDE.md`).
 
 Legend: **S** < half a day · **M** ~1 day · **L** 2–3 days · 🔒 needs dependency approval
 
@@ -391,6 +391,7 @@ Close the gaps that make people reject Monica during an evaluation against `.htt
 | 10.4 | `monica validate` | M |
 | 10.5 | Shell completion with flag values | S |
 | 10.6 | Accurate CLI description (no gRPC claim) | S |
+| 10.7 | Docs site on GitHub Pages | M |
 
 **10.1 `.http` import** — `monica import http <file|dir>`: JetBrains HTTP Client and VS Code
 REST Client files → `.mon` files + `monica.yml` on the shared `importer.Project` writer.
@@ -416,6 +417,10 @@ sending anything. Exit `0` / `2`.
 
 **10.6 Description** — root command text says what Monica does: run, test and load-test
 HTTP requests from `.mon` files.
+
+**10.7 Docs site** — `Readme.md` split into MkDocs (Material) pages under `docs/`, built with
+`--strict` on PRs and published to GitHub Pages from `main` (`.github/workflows/docs.yml`).
+The Readme keeps the overview, features and install, and links to the site.
 
 Later (1.x): VS Code extension and `monica.yml` JSON Schema, OpenAPI / HAR import, load
 metrics outputs (Prometheus remote-write, InfluxDB), HTML report, `run --watch`,
