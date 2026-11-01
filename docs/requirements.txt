@@ -1,0 +1,3 @@
+# Docs site build (MkDocs + Material). Not a Go dependency: only CI and `make docs` use it.
+mkdocs==1.6.1
+mkdocs-material==9.7.6
