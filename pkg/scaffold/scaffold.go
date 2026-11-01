@@ -95,7 +95,10 @@ func Init(dir string, opts Options) ([]Result, error) {
 // replaced when force is set.
 func writeFile(path string, content []byte, force bool) (Action, error) {
 	action := Created
-	if _, err := os.Lstat(path); err == nil {
+	if fi, err := os.Lstat(path); err == nil {
+		if fi.Mode()&fs.ModeSymlink != 0 {
+			return "", fmt.Errorf("%s is a symbolic link; not writing through it", path)
+		}
 		if !force {
 			return Skipped, nil
 		}
@@ -112,6 +115,9 @@ func writeFile(path string, content []byte, force bool) (Action, error) {
 // appendGitignore appends the entries path does not list yet (a line equal
 // to the entry, or to it with a leading "/").
 func appendGitignore(path string, entries []string) (Action, error) {
+	if fi, err := os.Lstat(path); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+		return "", fmt.Errorf("%s is a symbolic link; not appending through it", path)
+	}
 	old, err := os.ReadFile(path)
 	exists := err == nil
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
