@@ -57,11 +57,16 @@ type Scripts struct {
 	Paths []string `yaml:"paths"`
 }
 
-// LoadSettings configures `monica load` (used from phase 7).
+// LoadSettings configures `monica load`.
 type LoadSettings struct {
 	VUs        int      `yaml:"vus"`
 	Duration   Duration `yaml:"duration"`
 	Thresholds []string `yaml:"thresholds"`
+	// Rate starts iterations at a fixed rate ("100/s", see ParseRate)
+	// instead of looping VUs; VUs is then the most running at once.
+	Rate string `yaml:"rate"`
+	// Stages ramp the VU count (or the rate, with Rate) step by step.
+	Stages []Stage `yaml:"stages"`
 }
 
 // Duration is a time.Duration written as a Go duration string ("5s").
@@ -145,8 +150,8 @@ func (c *Config) validate(requireVersion bool) error {
 	if err := validateOrder(c.Order); err != nil {
 		return err
 	}
-	if c.Load.VUs < 0 {
-		return fmt.Errorf("load.vus: must not be negative, got %d", c.Load.VUs)
+	if err := c.Load.validate(); err != nil {
+		return err
 	}
 	return nil
 }

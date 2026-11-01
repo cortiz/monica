@@ -1,12 +1,14 @@
-// Package load runs .mon files as a load test: a fixed number of virtual
-// users (VUs) each loop over the files until a duration or a total number of
-// iterations is reached.
+// Package load runs .mon files as a load test. Virtual users (VUs) run
+// iterations (one pass over the files) in one of four ways: a fixed number
+// of VUs looping, a VU count ramped through stages, iterations started at a
+// constant rate, or at a rate ramped through stages.
 package load
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -23,17 +25,26 @@ const DefaultGracefulStop = 30 * time.Second
 
 // Options configure a load test.
 type Options struct {
-	// VUs is the number of virtual users running at once (at least 1).
+	// VUs is the number of virtual users looping at once; with Stages, the
+	// count the ramp starts from (may be 0); with Rate, the most VUs
+	// running iterations at once (at least 1).
 	VUs int
-	// Duration stops VUs from starting new iterations once it has passed;
-	// 0 means no time limit (Iterations must then be set).
+	// Rate, when positive, starts iterations at this many per second (with
+	// Stages: starts the ramp from it) on free VUs, however long each
+	// takes; an iteration due while all VUs are busy is dropped.
+	Rate float64
+	// Stages ramp the VU count, or with Rate the rate, linearly to each
+	// target in turn; their total is the test's duration.
+	Stages []Stage
+	// Duration stops new iterations once it has passed; 0 means no time
+	// limit (Iterations or Stages must then be set). Not with Stages.
 	Duration time.Duration
 	// Iterations is the total number of iterations, shared by all VUs; 0
-	// means as many as fit in Duration.
+	// means as many as fit in the duration.
 	Iterations int
-	// GracefulStop is how long iterations running when Duration ends may
-	// continue before their requests are aborted. Interrupted iterations
-	// are counted, not reported.
+	// GracefulStop is how long iterations running when the duration ends
+	// may continue before their requests are aborted. Interrupted
+	// iterations are counted, not reported.
 	GracefulStop time.Duration
 	// Files are the .mon files of one iteration, in run order.
 	Files []string
@@ -44,9 +55,11 @@ type Options struct {
 
 // Result summarizes a load test.
 type Result struct {
+	// VUs is how many VUs were started (the most at once).
 	VUs int
-	// Iterations completed, and those cut short by the stop.
-	Iterations, Interrupted int64
+	// Iterations completed, those cut short by the stop and, in rate mode,
+	// those dropped because no VU was free.
+	Iterations, Interrupted, Dropped int64
 	// Requests that ran (skipped ones excluded), and how many failed.
 	Requests, Failed int64
 	Duration         time.Duration
@@ -58,28 +71,56 @@ type Result struct {
 
 func (o *Options) validate() error {
 	switch {
-	case o.VUs < 1:
+	case o.Rate < 0 || math.IsNaN(o.Rate) || math.IsInf(o.Rate, 0):
+		return fmt.Errorf("rate must be a positive number of iterations per second, got %g", o.Rate)
+	case o.VUs < 0 || (o.VUs == 0 && (len(o.Stages) == 0 || o.Rate > 0)):
 		return fmt.Errorf("vus must be at least 1, got %d", o.VUs)
 	case o.Duration < 0:
 		return fmt.Errorf("duration must not be negative, got %s", o.Duration)
 	case o.Iterations < 0:
 		return fmt.Errorf("iterations must not be negative, got %d", o.Iterations)
-	case o.Duration == 0 && o.Iterations == 0:
-		return errors.New("set a duration or a number of iterations")
+	case len(o.Stages) > 0 && o.Duration > 0:
+		return errors.New("set either a duration or stages (stages set the duration)")
+	case o.Duration == 0 && o.Iterations == 0 && len(o.Stages) == 0:
+		return errors.New("set a duration, stages or a number of iterations")
 	case len(o.Files) == 0:
 		return errors.New("no .mon files to run")
+	}
+	for i, st := range o.Stages {
+		if st.Duration <= 0 || st.Target < 0 || math.IsNaN(st.Target) || math.IsInf(st.Target, 0) {
+			return fmt.Errorf("stage %d: needs a positive duration and a non-negative target", i+1)
+		}
+	}
+	if o.Rate == 0 && len(o.Stages) > 0 && o.maxVUs() < 1 {
+		return errors.New("stages never reach 1 VU")
 	}
 	return nil
 }
 
-// Run runs the load test until Duration or Iterations is reached, ctx is
-// done, or a VU hits an input error (unreadable file, invalid syntax or
-// config, unknown variable), which would fail every iteration the same
-// way. It returns the result so far and, in the last two cases, ctx's error
-// or the *runner.InputError.
+// maxVUs is how many VUs the test may need.
+func (o *Options) maxVUs() int {
+	if o.Rate > 0 || len(o.Stages) == 0 {
+		return o.VUs
+	}
+	most := float64(o.VUs)
+	for _, st := range o.Stages {
+		most = math.Max(most, st.Target)
+	}
+	return int(math.Floor(most + 1e-9)) // the ramp rounds down too
+}
+
+// Run runs the load test until its duration, stages or iterations are
+// done, ctx is done, or a VU hits an input error (unreadable file, invalid
+// syntax or config, unknown variable), which would fail every iteration the
+// same way. It returns the result so far and, in the last two cases, ctx's
+// error or the *runner.InputError.
 func Run(ctx context.Context, opts Options) (Result, error) {
 	if err := opts.validate(); err != nil {
 		return Result{}, err
+	}
+	duration := opts.Duration
+	if len(opts.Stages) > 0 {
+		duration = stagesDuration(opts.Stages)
 	}
 	// iterCtx ends when no new iteration may start; hardCtx when running
 	// requests are aborted.
@@ -87,41 +128,41 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	defer hardStop()
 	iterCtx, iterStop := context.WithCancel(hardCtx)
 	defer iterStop()
-	if opts.Duration > 0 {
-		t1 := time.AfterFunc(opts.Duration, iterStop)
-		t2 := time.AfterFunc(opts.Duration+opts.GracefulStop, hardStop)
+	if duration > 0 {
+		t1 := time.AfterFunc(duration, iterStop)
+		t2 := time.AfterFunc(duration+opts.GracefulStop, hardStop)
 		defer t1.Stop()
 		defer t2.Stop()
 	}
 
-	t := &test{opts: opts, hard: hardCtx, vuMetrics: make([]metrics, opts.VUs)}
-	var abortOnce sync.Once
-	abort := func(err error) {
-		abortOnce.Do(func() {
+	t := &test{opts: opts, hard: hardCtx, iter: iterCtx, stopIter: iterStop}
+	t.abort = func(err error) {
+		t.abortOnce.Do(func() {
 			t.inputErr = err
 			hardStop()
 		})
 	}
 
 	start := time.Now()
-	var wg sync.WaitGroup
-	for vu := 1; vu <= opts.VUs; vu++ {
-		wg.Add(1)
-		go func(vu int) {
-			defer wg.Done()
-			t.runVU(vu, iterCtx, abort)
-		}(vu)
+	switch {
+	case opts.Rate > 0:
+		t.runRate(start)
+	case len(opts.Stages) > 0:
+		t.runRamping(start)
+	default:
+		t.runFixed()
 	}
-	wg.Wait()
+	t.wg.Wait()
 
 	all := metrics{}
-	for _, m := range t.vuMetrics {
-		all.merge(m)
+	for _, v := range t.vus {
+		all.merge(v.sk.m)
 	}
 	res := Result{
-		VUs:         opts.VUs,
+		VUs:         len(t.vus),
 		Iterations:  t.iterations.Load(),
 		Interrupted: t.interrupted.Load(),
+		Dropped:     t.dropped.Load(),
 		Duration:    time.Since(start),
 	}
 	res.Stats, res.Total = all.stats()
@@ -133,59 +174,253 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 }
 
 type test struct {
-	opts     Options
-	hard     context.Context
-	inputErr error // set once, before hard is cancelled
+	opts       Options
+	hard, iter context.Context
+	stopIter   func() // ends iter: no more iterations start
+	abort      func(error)
+	abortOnce  sync.Once
+	inputErr   error // set once, before hard is cancelled
+	wg         sync.WaitGroup
 
-	claimed                 atomic.Int64 // iterations started (with Iterations)
-	iterations, interrupted atomic.Int64
-	vuMetrics               []metrics // by VU - 1; each written only by its VU
+	mu  sync.Mutex
+	vus []*vu // every VU started; read after wg.Wait
+
+	claimed                          atomic.Int64 // iterations started (with Iterations)
+	iterations, interrupted, dropped atomic.Int64
 }
 
-// runVU loops over the files with its own runner (own script runtimes and
-// vars) until iterCtx ends or the shared iterations run out.
-func (t *test) runVU(vu int, iterCtx context.Context, abort func(error)) {
-	ropts := t.opts.Run
-	ropts.Context, ropts.NoSummary, ropts.VU = t.hard, true, vu
-	sk := &sink{t: t, m: metrics{}}
-	t.vuMetrics[vu-1] = sk.m
-	r := runner.NewWithReporter(&ropts, sk)
-	defer func() {
-		if err := r.AfterAll(); err != nil {
-			logging.Log.Warn().Msgf("VU %d: %v", vu, err)
+// claim reserves one of the shared iterations; false when they ran out.
+// Taking the last one ends the test's iteration phase, so waiting VUs and
+// schedulers stop.
+func (t *test) claim() bool {
+	if t.opts.Iterations == 0 {
+		return true
+	}
+	n := t.claimed.Add(1)
+	if n >= int64(t.opts.Iterations) {
+		t.stopIter()
+	}
+	return n <= int64(t.opts.Iterations)
+}
+
+// runFixed starts opts.VUs VUs that loop until the end.
+func (t *test) runFixed() {
+	for i := 1; i <= t.opts.VUs; i++ {
+		t.spawn(func(v *vu) {
+			for t.iter.Err() == nil && t.claim() && v.iterate() {
+			}
+		})
+	}
+}
+
+// runRamping starts every VU the stages need; VU i runs iterations only
+// while the ramped count is at least i, finishing its current iteration
+// when the count drops below it.
+func (t *test) runRamping(start time.Time) {
+	segs := segments(float64(t.opts.VUs), t.opts.Stages)
+	g := newGauge()
+	update := func() { g.set(int(math.Floor(valueAt(segs, time.Since(start)) + 1e-9))) }
+	update()
+	t.wg.Add(1)
+	go func() {
+		defer t.wg.Done()
+		tick := time.NewTicker(50 * time.Millisecond)
+		defer tick.Stop()
+		for {
+			select {
+			case <-tick.C:
+				update()
+			case <-t.iter.Done():
+				return
+			}
 		}
 	}()
-	for n := 1; iterCtx.Err() == nil; n++ {
-		if t.opts.Iterations > 0 && t.claimed.Add(1) > int64(t.opts.Iterations) {
-			return
-		}
-		r.SetIteration(n, nil)
-		sk.ran = false
-		for _, file := range t.opts.Files {
-			err := r.RunFile(file)
-			if t.hard.Err() != nil {
-				break
+	for i := 1; i <= t.opts.maxVUs(); i++ {
+		i := i
+		t.spawnLazy(func() bool {
+			// Create VU i only once the ramp first reaches it.
+			for {
+				n, changed := g.get()
+				if n >= i {
+					return true
+				}
+				select {
+				case <-changed:
+				case <-t.iter.Done():
+					return false
+				}
 			}
-			var ie *runner.InputError
-			if errors.As(err, &ie) {
-				abort(ie)
-				break
+		}, func(v *vu) {
+			for t.iter.Err() == nil {
+				if n, changed := g.get(); n < i {
+					select {
+					case <-changed:
+					case <-t.iter.Done():
+					}
+					continue
+				}
+				if !t.claim() || !v.iterate() {
+					return
+				}
 			}
-			if err != nil {
-				logging.Log.Debug().Msgf("VU %d: %v", vu, err)
-			}
-		}
-		if t.hard.Err() != nil {
-			t.interrupted.Add(1)
-			return
-		}
-		if !sk.ran {
-			// Everything was filtered out or @skip: looping would only spin.
-			abort(&runner.InputError{Err: errors.New("an iteration ran no requests (all filtered out by --filter or marked @skip)")})
-			return
-		}
-		t.iterations.Add(1)
+		})
 	}
+}
+
+// runRate starts iterations on schedule, each on a free VU; VUs are
+// created as needed, up to opts.VUs.
+func (t *test) runRate(start time.Time) {
+	next := arrivals(segments(t.opts.Rate, t.opts.Stages))
+	jobs := make(chan struct{})
+	defer close(jobs) // idle VUs stop
+	started := 0
+	timer := time.NewTimer(0)
+	defer timer.Stop()
+	for k := int64(0); ; k++ {
+		offset, ok := next(k)
+		if !ok {
+			return
+		}
+		if wait := time.Until(start.Add(offset)); wait > 0 {
+			timer.Reset(wait)
+			select {
+			case <-timer.C:
+			case <-t.iter.Done():
+				return
+			}
+		}
+		if t.iter.Err() != nil || !t.claim() {
+			return
+		}
+		select {
+		case jobs <- struct{}{}: // an idle VU took it
+			continue
+		default:
+		}
+		if started == t.opts.VUs {
+			t.dropped.Add(1)
+			continue
+		}
+		started++
+		t.spawn(func(v *vu) {
+			if !v.iterate() {
+				return
+			}
+			for range jobs {
+				if !v.iterate() {
+					return
+				}
+			}
+		})
+	}
+}
+
+// spawn starts a VU goroutine running loop.
+func (t *test) spawn(loop func(v *vu)) {
+	t.spawnLazy(func() bool { return true }, loop)
+}
+
+// spawnLazy starts a goroutine that creates its VU once ready returns true
+// (never, if it returns false) and then runs loop.
+func (t *test) spawnLazy(ready func() bool, loop func(v *vu)) {
+	t.wg.Add(1)
+	go func() {
+		defer t.wg.Done()
+		if !ready() {
+			return
+		}
+		v := t.newVU()
+		defer v.close()
+		loop(v)
+	}()
+}
+
+// vu is one virtual user: its own runner (script runtimes, vars, hooks)
+// and metrics.
+type vu struct {
+	t  *test
+	id int
+	r  *runner.Runner
+	sk *sink
+	n  int // iterations started
+}
+
+func (t *test) newVU() *vu {
+	t.mu.Lock()
+	v := &vu{t: t, id: len(t.vus) + 1}
+	t.vus = append(t.vus, v)
+	t.mu.Unlock()
+	ropts := t.opts.Run
+	ropts.Context, ropts.NoSummary, ropts.VU = t.hard, true, v.id
+	v.sk = &sink{t: t, m: metrics{}}
+	v.r = runner.NewWithReporter(&ropts, v.sk)
+	return v
+}
+
+func (v *vu) close() {
+	if err := v.r.AfterAll(); err != nil {
+		logging.Log.Warn().Msgf("VU %d: %v", v.id, err)
+	}
+}
+
+// iterate runs one iteration; false means the test is over for this VU
+// (aborted or failed with an input error).
+func (v *vu) iterate() bool {
+	t := v.t
+	v.n++
+	v.r.SetIteration(v.n, nil)
+	v.sk.ran = false
+	for _, file := range t.opts.Files {
+		err := v.r.RunFile(file)
+		if t.hard.Err() != nil {
+			break
+		}
+		var ie *runner.InputError
+		if errors.As(err, &ie) {
+			t.abort(ie)
+			break
+		}
+		if err != nil {
+			logging.Log.Debug().Msgf("VU %d: %v", v.id, err)
+		}
+	}
+	if t.hard.Err() != nil {
+		t.interrupted.Add(1)
+		return false
+	}
+	if !v.sk.ran {
+		// Everything was filtered out or @skip: looping would only spin.
+		t.abort(&runner.InputError{Err: errors.New("an iteration ran no requests (all filtered out by --filter or marked @skip)")})
+		return false
+	}
+	t.iterations.Add(1)
+	return true
+}
+
+// gauge is an int that goroutines can wait on to change.
+type gauge struct {
+	mu      sync.Mutex
+	n       int
+	changed chan struct{}
+}
+
+func newGauge() *gauge { return &gauge{changed: make(chan struct{})} }
+
+func (g *gauge) set(n int) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if n != g.n {
+		g.n = n
+		close(g.changed)
+		g.changed = make(chan struct{})
+	}
+}
+
+// get returns the value and a channel closed on the next change.
+func (g *gauge) get() (int, <-chan struct{}) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.n, g.changed
 }
 
 // sink collects one VU's results.
@@ -214,19 +449,17 @@ func (s *sink) Done(report.Summary) error { return nil }
 //	iterations  1234 completed (41.1/s), 2 interrupted
 //	requests    2468 (82.2/s), 3 failed (0.12%)
 //	duration    30.02s
+//
+// followed by the per-request table.
 func (r Result) Summary(opts Options) string {
 	var b strings.Builder
-	limit := opts.Duration.String()
-	if opts.Iterations > 0 {
-		limit = fmt.Sprintf("%d %s", opts.Iterations, plural(int64(opts.Iterations), "iteration"))
-		if opts.Duration > 0 {
-			limit += ", max " + opts.Duration.String()
-		}
-	}
-	fmt.Fprintf(&b, "monica load: %d %s, %s\n", r.VUs, plural(int64(r.VUs), "VU"), limit)
+	fmt.Fprintf(&b, "monica load: %s\n", describe(opts, r.VUs))
 	fmt.Fprintf(&b, "iterations  %d completed (%s/s)", r.Iterations, rate(r.Iterations, r.Duration))
 	if r.Interrupted > 0 {
 		fmt.Fprintf(&b, ", %d interrupted", r.Interrupted)
+	}
+	if r.Dropped > 0 {
+		fmt.Fprintf(&b, ", %d dropped (no free VU)", r.Dropped)
 	}
 	fmt.Fprintf(&b, "\nrequests    %d (%s/s), %d failed", r.Requests, rate(r.Requests, r.Duration), r.Failed)
 	if r.Requests > 0 {
@@ -241,6 +474,47 @@ func (r Result) Summary(opts Options) string {
 		writeTable(&b, r.Stats, r.Total, r.Duration)
 	}
 	return b.String()
+}
+
+// describe names the test's shape, e.g. "10 VUs, 30s", "ramping VUs
+// 0 → 50 → 0 over 1m30s" or "20.0 iterations/s, 30s, up to 50 VUs (12
+// used)".
+func describe(o Options, started int) string {
+	var parts []string
+	switch {
+	case o.Rate > 0 && len(o.Stages) > 0:
+		parts = append(parts, "ramping rate "+ramp(o.Rate, o.Stages, "%.1f")+" iterations/s over "+stagesDuration(o.Stages).String())
+	case o.Rate > 0:
+		parts = append(parts, fmt.Sprintf("%.1f iterations/s", o.Rate))
+	case len(o.Stages) > 0:
+		parts = append(parts, "ramping VUs "+ramp(float64(o.VUs), o.Stages, "%g")+" over "+stagesDuration(o.Stages).String())
+	default:
+		parts = append(parts, fmt.Sprintf("%d %s", o.VUs, plural(int64(o.VUs), "VU")))
+	}
+	iters := fmt.Sprintf("%d %s", o.Iterations, plural(int64(o.Iterations), "iteration"))
+	switch {
+	case o.Iterations > 0 && len(o.Stages) > 0:
+		parts = append(parts, "max "+iters)
+	case o.Iterations > 0 && o.Duration > 0:
+		parts = append(parts, iters+", max "+o.Duration.String())
+	case o.Iterations > 0:
+		parts = append(parts, iters)
+	case o.Duration > 0:
+		parts = append(parts, o.Duration.String())
+	}
+	if o.Rate > 0 {
+		parts = append(parts, fmt.Sprintf("up to %d %s (%d used)", o.VUs, plural(int64(o.VUs), "VU"), started))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// ramp writes start → target → … with format for each value.
+func ramp(start float64, stages []Stage, format string) string {
+	vals := []string{fmt.Sprintf(format, start)}
+	for _, st := range stages {
+		vals = append(vals, fmt.Sprintf(format, st.Target))
+	}
+	return strings.Join(vals, " → ")
 }
 
 func rate(n int64, d time.Duration) string {

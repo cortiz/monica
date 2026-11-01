@@ -194,9 +194,17 @@ func (c *Config) mergeLocal(local *Config) {
 	}
 	if local.Load.Duration.Duration > 0 {
 		c.Load.Duration = local.Load.Duration
+		c.Load.Stages = nil // a duration replaces stages
 	}
 	if local.Load.Thresholds != nil {
 		c.Load.Thresholds = local.Load.Thresholds
+	}
+	if local.Load.Rate != "" {
+		c.Load.Rate = local.Load.Rate
+	}
+	if local.Load.Stages != nil {
+		c.Load.Stages = local.Load.Stages
+		c.Load.Duration = Duration{} // stages set the duration
 	}
 }
 

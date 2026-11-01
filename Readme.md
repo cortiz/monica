@@ -108,6 +108,9 @@ Parse errors are reported as `file:line: message`.
 ```bash
 monica load --vus 10 --duration 30s      # 10 VUs for 30 seconds
 monica load -u 5 -i 1000 -s checkout.mon # 1000 iterations shared by 5 VUs
+monica load --stage 30s:50 --stage 1m:50 --stage 30s:0   # ramp 0 → 50 VUs, hold, ramp down
+monica load --rate 100/s --duration 1m -u 50             # 100 iterations/s on up to 50 VUs
+monica load --rate 10/s --stage 1m:200 -u 100            # rate ramps 10 → 200/s
 ```
 
 ```
@@ -138,12 +141,24 @@ phases (avg / p95)  dns 0 / 0 · connect 95µs / 410µs · tls 0 / 0 · waiting 
   script runtime and variables, so `vars.set` values stay with that VU from one iteration to
   the next; scripts see `monica.vu` and `monica.iteration`. Folder `beforeAll` hooks run once
   per VU, before its first iteration, and `afterAll` when it stops.
-* **Limits** — `--duration` stops VUs from starting new iterations; iterations still running
-  get `--graceful-stop` (default 30s) to finish, then their requests are aborted and they are
-  counted as interrupted. `-i, --iterations` is a total shared by all VUs; with both, whichever
-  comes first. Defaults come from `load.vus` and `load.duration` in `monica.yml` (`--config`
-  or the nearest one above the current directory); `--iterations` alone ignores
-  `load.duration`. Without either, 1 VU runs 1 iteration.
+* **Modes** — by default `--vus` VUs loop over the files. `--stage duration:target`
+  (repeatable, or `load.stages`) ramps the VU count linearly to each target in turn,
+  starting from `--vus` (default 0); a VU above the current count finishes its iteration and
+  waits, and VUs are only started once the ramp reaches them. The stages' total is the test's
+  duration. `--rate` (or `load.rate`: `100`, `100/s`, `6000/m`, `90/h`, `1/500ms`) starts
+  iterations on a fixed schedule instead, however long each takes, on up to `--vus` VUs
+  (default 100; created as needed). An iteration due while every VU is busy is dropped and
+  counted (`5 dropped (no free VU)`): raise `--vus` if that happens. With `--rate` and
+  stages, the targets are iterations per second and the rate ramps from `--rate`.
+  `load.vus` stands in for `--vus` in every mode.
+* **Limits** — `--duration` (or the end of the stages) stops new iterations; iterations still
+  running get `--graceful-stop` (default 30s) to finish, then their requests are aborted and
+  they are counted as interrupted. `-i, --iterations` is a total shared by all VUs; with a
+  duration or stages, whichever comes first. Defaults come from `load:` in `monica.yml`
+  (`--config` or the nearest one above the current directory), and flags win: `--duration`
+  replaces `load.stages`, `--stage` replaces `load.duration`, and `--iterations` alone ignores
+  `load.duration`. `--stage` and `--duration` together are an error. With no duration, stages
+  or iterations anywhere, 1 VU runs 1 iteration.
 * **Thresholds** — pass/fail conditions checked at the end, from `load.thresholds` in
   `monica.yml` or `--threshold` flags (which replace the config list):
 
@@ -169,10 +184,12 @@ phases (avg / p95)  dns 0 / 0 · connect 95µs / 410µs · tls 0 / 0 · waiting 
 
 | Flag | Meaning |
 |------|---------|
-| `-u, --vus <n>` | Virtual users running at once (default `load.vus`, else 1) |
+| `-u, --vus <n>` | Virtual users running at once (default `load.vus`, else 1); with `--stage` the count to ramp from (default 0), with `--rate` the most at once (default 100) |
 | `--duration <d>` | Stop starting iterations after this long, e.g. `30s` (default `load.duration`) |
 | `-i, --iterations <n>` | Total iterations, shared by all VUs |
-| `--graceful-stop <d>` | Time running iterations get at the end of `--duration` (default `30s`) |
+| `--stage <d:target>` | Ramp step, e.g. `30s:50`; repeatable, replaces `load.stages`; not with `--duration` |
+| `--rate <n/period>` | Start iterations at a fixed rate, e.g. `100/s` (default `load.rate`) |
+| `--graceful-stop <d>` | Time running iterations get at the end of `--duration` or the stages (default `30s`) |
 | `--threshold <cond>` | Pass/fail condition, e.g. `p95<300ms`, `login:errors<1%`; repeatable, replaces `load.thresholds` |
 | `-s`, `-r`, `-e`, `--var`, `-c`, `--filter` | As for `monica run` |
 
@@ -429,7 +446,11 @@ scripts:
 order: [auth/login.mon, users]  # run these first (see Run order)
 load:                       # defaults for monica load
   vus: 50
-  duration: 30s
+  duration: 30s             # or stages (not both):
+  # stages:                 #   ramp step by step (see Load testing)
+  #   - {duration: 30s, target: 50}
+  #   - {duration: 1m, target: 0}
+  # rate: 100/s             # start iterations at a fixed rate instead
   thresholds: ["p95<300ms", "errors<1%"]   # pass/fail conditions (see Load testing)
 ```
 
