@@ -1,0 +1,21 @@
+headers {
+  X-Client: monica-import
+}
+
+auth {
+  mode: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+vars:pre-request {
+  pageSize: 20
+}
+
+tests {
+  test("no server error", function () {
+    expect(res.getStatus()).to.be.below(500);
+  });
+}

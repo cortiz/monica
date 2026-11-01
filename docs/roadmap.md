@@ -303,7 +303,7 @@ VUs), `--no-keepalive`, `-k/--insecure` (also on `monica run`), a cookie jar per
 
 ---
 
-## Phase 9 — Integrations & UI (no particular order)
+## Phase 9 — Integrations & UI ✅ done
 
 Independent tracks: they can be picked up in any order once their prerequisites are done.
 
@@ -311,7 +311,7 @@ Independent tracks: they can be picked up in any order once their prerequisites 
 |----|------|------|-------|
 | 9.1 | TUI (`monica tui`) ✅ | L | Phases 1, 2 (better with 4) |
 | 9.2 | Import from Postman ✅ | L | Phases 1, 2 (scripts: 3–4) |
-| 9.3 | Import from Bruno | L | Phases 1, 2 (scripts: 3–4) |
+| 9.3 | Import from Bruno ✅ | L | Phases 1, 2 (scripts: 3–4) |
 
 **9.1 TUI** — interactive terminal UI over the same runner (no separate logic).
 🔒 `github.com/charmbracelet/bubbletea` + `bubbles` + `lipgloss`.
@@ -361,6 +361,14 @@ Independent tracks: they can be picked up in any order once their prerequisites 
   (`bru.setVar/getVar/getEnvVar`, `res.getStatus()/getBody()/getHeader()`); `assert` blocks → generated `expect()` calls.
 - 9.3.5 Keep Bruno's `seq` ordering (maps to 6.1 order).
 - ✅ Done when: fixture collections round-trip into runnable `.mon` files with an import report of unconverted items.
+- ✅ Done: `monica import bruno` (`pkg/importer/bruno`): a `.bru` parser (dictionary, text and
+  list blocks, `~` disabled entries, `'''` multi-line values); `bruno.json` / `collection.bru` /
+  `folder.bru` → `monica.yml` defaults (headers, vars) and `monica.js` hooks; environments with
+  `vars:secret` as `${NAME}`; `seq` order; bearer / basic / API key auth with inheritance; all
+  HTTP body modes (form files copied); scripts, `vars:*`, `assert` (as `test()` + Chai) and
+  `tests` behind a `bru` / `req` / `res` shim (`lib/monica-bruno.js`, sharing
+  `lib/monica-chai.js` with the Postman shim). The fixture collection imports and runs end
+  to end (all requests pass) against the same stand-in API as the Postman fixture.
 
 Shared for 9.2/9.3: a common `pkg/importer` (interface + `.mon`/`monica.yml` writer + report),
 so each source only implements parsing.
@@ -381,10 +389,7 @@ Postman and Bruno import need no new dependencies (stdlib JSON + hand-written `.
 
 ## Suggested order
 
-`0.x → 1.x → 2.x → 3.x → 4.x → 5.x → 6.x → 7.x → 8.x` (done); next: Phase 9 tracks.
+`0.x → … → 9.x`: every phase is done.
 
-1.3 landed before Phase 2 as parse-only; revisit the script syntax in 3.x if the engine
-needs changes (e.g. `%}` inside code).
-
-Phase 9 tracks (TUI, Postman import, Bruno import) have no fixed order — slot each in
-whenever its prerequisites are met. Basic request import (no scripts) is possible right after Phase 2.
+1.3 landed before Phase 2 as parse-only. `%}` still can't appear inside a `{% %}` block;
+the importers write such scripts to `.js` files instead.

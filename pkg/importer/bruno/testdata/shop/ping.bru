@@ -1,0 +1,28 @@
+meta {
+  name: Ping
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/ping?at={{$timestamp}}
+  body: none
+  auth: none
+}
+
+headers {
+  X-Request-Id: {{$guid}}
+  X-Trace: {{process.env.TRACE_ID}}
+}
+
+docs {
+  Health check. Not converted: docs are ignored.
+}
+
+tests {
+  // a template literal with %} inside
+  const s = `100%}`;
+  test("pong", function () {
+    expect(res.getBody()).to.include("pong");
+  });
+}

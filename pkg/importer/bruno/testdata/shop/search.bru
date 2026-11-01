@@ -1,0 +1,23 @@
+meta {
+  name: Search (GraphQL)
+  type: graphql
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/graphql
+  body: graphql
+  auth: inherit
+}
+
+body:graphql {
+  query ($q: String!) {
+    search(q: $q) { id }
+  }
+}
+
+body:graphql:vars {
+  {
+    "q": "mug"
+  }
+}
