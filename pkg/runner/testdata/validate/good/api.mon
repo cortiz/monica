@@ -1,0 +1,15 @@
+### Create a user
+# @name createUser
+< {% vars.set(`userId`, "42") %}
+POST {{baseUrl}}/users/{{userId}}?run={{runId}}
+Content-Type: application/json
+
+< ./payloads/user.json
+
+> ./scripts/check.js
+
+### Use the module's session
+GET {{baseUrl}}/me
+Authorization: Bearer {{session}}
+
+> ./scripts/check.js

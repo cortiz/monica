@@ -1,0 +1,4 @@
+POST https://example.test/upload
+Content-Type: application/json
+
+< ./nope.json

@@ -15,6 +15,7 @@ Accept: application/json
 Keep `.mon` files next to your code, review them in pull requests, and run them in CI.
 
 **Contents:** [Install](#install) · [Quick start](#quick-start) · [Usage](#usage) ·
+[Validate](#validate-without-sending-monica-validate) · [Shell completion](#shell-completion) ·
 [Importing](#importing-curl-postman-bruno) · [Load testing](#load-testing) ·
 [TUI](#interactive-ui-monica-tui) · [Scripting](#scripting) · [Modules](#modules) ·
 [Folder hooks](#folder-hooks-monicajs) · [Configuration](#configuration) ·
@@ -29,6 +30,9 @@ Keep `.mon` files next to your code, review them in pull requests, and run them 
   (CommonJS, ES modules, TypeScript), folder hooks and built-in crypto/encoding/JSONPath.
 * Chaining with `vars.set()`, a cookie jar per run, data-driven runs (`--data` CSV/JSON).
 * Console, JSON and JUnit reports; exit codes for CI.
+* `monica validate`: check syntax, configs, scripts and variables without sending anything.
+* Shell completion for bash, zsh, fish and PowerShell (`monica completion`), including
+  environment names and `.mon` files.
 * `monica load`: virtual users, ramping stages, arrival rates, percentiles, thresholds.
 * `monica tui`: browse, send and load-test requests in an interactive terminal UI.
 * `monica init` to start a project; `monica import curl|postman|bruno` to bring existing requests over.
@@ -267,6 +271,59 @@ monica run --reporter junit --out monica-report.xml
 | `2`  | Usage or input error (unknown flag, missing file, invalid `.mon` syntax or config, unknown variable or environment, script syntax error) |
 
 Parse errors are reported as `file:line: message`.
+
+### Validate without sending (`monica validate`)
+`monica validate` checks the files `monica run` would run, with the same selection flags
+(`-s`, `-r`, `-e`, `--var`, `-c`, `--filter`, `--data`), but sends nothing and runs no script.
+Use it in CI or a pre-commit hook.
+
+```bash
+monica validate -r 3                 # every .mon file up to 3 folders deep
+monica validate -s api.mon -e staging
+```
+
+It reports:
+* `.mon` syntax errors, including missing body (`< ./file`) and script (`> ./tests.js`) files;
+* an invalid `monica.yml` (or `monica.local.yml`, `.env`) and an unknown `--env`;
+* JavaScript/TypeScript syntax errors in inline `{% %}` blocks, script files and the
+  `monica.js` hooks that apply (compiled, not run);
+* `{{variables}}` that nothing defines, in URLs, headers, bodies and default headers;
+* as **warnings**, `${NAME}` secrets missing from the environment and `.env`.
+
+Variables set at run time can't be known up front, so a variable counts as defined when
+`monica.yml` or `--var` sets it, when it is a column of the `--data` file, or when any script
+of the run (request scripts, the `monica.js` hooks that apply, modules in `scripts.paths`)
+contains `vars.set("name"` with that literal name (`"`, `'` or `` ` `` quotes). Names built at
+run time (`vars.set(key, ...)`) are not detected; pass them with `--var` if needed.
+
+It prints one line per problem, then a summary:
+
+```
+login.mon:9: SyntaxError: Unexpected token ;
+users.mon:4: listUsers: unknown variable "tokne"
+monica.yml:6: warning: ${API_TOKEN} is not set (in the environment or .env)
+3 problems
+```
+
+Without errors it ends with `N files, M requests OK` (and the number of warnings, if any).
+Exit codes: `0` no errors (warnings allowed), `2` at least one error or a usage error.
+
+### Shell completion
+`monica completion bash|zsh|fish|powershell` prints a completion script. Besides commands and
+flags, it completes `-e/--env` with the environments of the nearest `monica.yml` (or `-c`),
+`-s/--single` with `.mon` files, `--data` with `.csv`/`.json` files and `--reporter` with its
+formats.
+
+```bash
+# bash (needs the bash-completion package)
+monica completion bash > ~/.local/share/bash-completion/completions/monica
+# zsh (compinit enabled; any folder on $fpath)
+monica completion zsh > "${fpath[1]}/_monica"
+# fish
+monica completion fish > ~/.config/fish/completions/monica.fish
+```
+
+Start a new shell afterwards; `monica completion <shell> --help` shows more options.
 
 ## Load testing
 
