@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"jmpeax.com/sec/monica/pkg/report"
 )
 
@@ -207,7 +208,7 @@ func (m *Model) treePane() string {
 		line := strings.Repeat("  ", n.depth) + m.rowText(n)
 		line = truncate(line, w-2)
 		if i == m.cursor {
-			line = selStyle.Render(padRight(line, w-2))
+			line = highlight(line, w-2)
 		}
 		lines = append(lines, line)
 	}
@@ -299,7 +300,7 @@ func (m *Model) overlayView() string {
 				line += dim.Render("  (current)")
 			}
 			if i == m.envCursor {
-				line = selStyle.Render(padRight(line, w))
+				line = highlight(line, w)
 			}
 			b.WriteString(line + "\n")
 		}
@@ -343,7 +344,7 @@ func (m *Model) overlayView() string {
 			line := fmt.Sprintf("%s  %s  %s", e.at.Format("15:04:05"), resultLine(e.res), dim.Render(fmt.Sprintf("%s:%d [%s]", e.res.File, e.res.Line, envName(e.env))))
 			line = truncate(line, w)
 			if i == m.histCursor {
-				line = selStyle.Render(padRight(line, w))
+				line = highlight(line, w)
 			}
 			b.WriteString(line + "\n")
 		}
@@ -474,6 +475,12 @@ func truncate(s string, w int) string {
 		return s
 	}
 	return lipgloss.NewStyle().MaxWidth(w).Render(s)
+}
+
+// highlight shows a selected line in reverse video across width w. Inner
+// colors are dropped: their resets would end the reverse video early.
+func highlight(line string, w int) string {
+	return selStyle.Render(padRight(ansi.Strip(line), w))
 }
 
 func padRight(s string, w int) string {
