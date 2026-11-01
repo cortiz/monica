@@ -6,6 +6,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -242,6 +243,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.load.summary, m.load.err = msg.summary, msg.err
 		if msg.err != nil {
 			m.setStatus("load test: "+msg.err.Error(), true)
+		} else if n := strings.Count(msg.summary, "  ✗ "); n > 0 {
+			m.setStatus(fmt.Sprintf("load test finished: %d threshold(s) failed", n), true)
 		} else {
 			m.setStatus("load test finished", false)
 		}

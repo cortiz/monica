@@ -155,6 +155,11 @@ func (m *Model) tabContent() string {
 // View implements tea.Model.
 func (m *Model) View() string {
 	header := m.headerLine()
+	if m.overlay == overlayLoad {
+		// The load summary is a wide table: give it the whole window.
+		body := box(m.loadView(m.width-4), m.width, m.bodyHeight(), true)
+		return lipgloss.JoinVertical(lipgloss.Left, header, body, m.footerLine())
+	}
 	var right string
 	if m.overlay != overlayNone {
 		right = box(m.overlayView(), m.rightWidth(), m.bodyHeight(), true)
@@ -349,8 +354,6 @@ func (m *Model) overlayView() string {
 			b.WriteString(line + "\n")
 		}
 		return b.String()
-	case overlayLoad:
-		return m.loadView(w)
 	case overlayHelp:
 		return bold.Render("Keys") + "\n\n" + strings.Join([]string{
 			"↑/↓ j/k       move          ←/→ h/l   fold / unfold",
@@ -403,7 +406,8 @@ func (m *Model) loadView(w int) string {
 		b.WriteString(dim.Render("esc stops the test (the summary so far is shown)"))
 		return b.String()
 	}
-	b.WriteString(l.summary + "\n" + dim.Render("esc close · L runs it again after closing"))
+	summary := strings.NewReplacer("  ✓ ", "  "+okStyle.Render("✓")+" ", "  ✗ ", "  "+errStyle.Render("✗")+" ").Replace(l.summary)
+	b.WriteString(summary + "\n" + dim.Render("esc close · L runs it again after closing"))
 	return b.String()
 }
 

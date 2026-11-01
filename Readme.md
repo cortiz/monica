@@ -210,6 +210,11 @@ all      2468  3       82.2  2.05ms  8.36ms  7.40ms  14.9ms  16.8ms  22.1ms  61.
 phases (avg / p95)  dns 0 / 0 · connect 95µs / 410µs · tls 0 / 0 · waiting 7.90ms / 16.1ms · receiving 310µs / 920µs
 ```
 
+![monica load: summary and thresholds](docs/images/load/cli-summary.png)
+
+While it runs, a progress line is redrawn on stderr ([screenshot](docs/images/load/cli-live.png)); the
+[TUI](#interactive-ui-monica-tui) has a live dashboard for the same test.
+
 * **Metrics** — one row per request (by file and line, named by its `@name`, title or
   `METHOD URL`) and an `all` row: count, failures, requests per second and the request time
   (send until the body is read) as min, average, p50/p90/p95/p99 and max. Percentiles come
