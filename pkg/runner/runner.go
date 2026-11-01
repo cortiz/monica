@@ -508,7 +508,9 @@ func (r *Runner) project(file string) (*project, error) {
 		client: net.NewClient(net.Options{
 			Timeout:            settings.Timeout,
 			NoFollowRedirects:  !settings.FollowRedirects,
-			InsecureSkipVerify: settings.InsecureSkipVerify,
+			InsecureSkipVerify: settings.InsecureSkipVerify || r.opts.Insecure,
+			Transports:         r.opts.Transports,
+			Jar:                r.opts.CookieJar,
 		}),
 		mask:          newMasker(settings.Secrets),
 		scriptTimeout: scriptTimeout,

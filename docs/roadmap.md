@@ -224,7 +224,7 @@ script/hook errors and failed tests (not input errors); only the last attempt is
 
 ---
 
-## Phase 7 — Load testing (`monica load`)
+## Phase 7 — Load testing (`monica load`) ✅ done
 
 | ID | Task | Size |
 |----|------|------|
@@ -264,6 +264,8 @@ for stdout) with config, totals, per-request latency/phases and thresholds.
 
 **7.6 Tuning** — shared `Transport` with `MaxIdleConnsPerHost`, keep-alive toggle,
 `--insecure`, per-VU cookie jar.
+✅ Done: one `net.Transports` pool per test (idle conns per host = max VUs; shared by all
+VUs), `--no-keepalive`, `-k/--insecure` (also on `monica run`), a cookie jar per VU.
 
 ---
 
@@ -271,7 +273,7 @@ for stdout) with config, totals, per-request latency/phases and thresholds.
 
 - 8.1 `monica init` — scaffold `monica.yml`, example `.mon`, `.gitignore` entries.
 - 8.2 `monica import curl '<cmd>'` → `.mon` (Postman/Bruno import live in Phase 9).
-- 8.3 Cookies (`cookie jar` per run), multipart/form-data, file upload.
+- 8.3 Cookies (`cookie jar` per run for `monica run`; `monica load` has one per VU since 7.6), multipart/form-data, file upload.
 - 8.4 Docs site / full format reference; examples folder.
 - 8.5 Release: goreleaser + Docker image updated with new commands.
 

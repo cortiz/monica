@@ -2,7 +2,6 @@ package net
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -39,20 +38,27 @@ type Options struct {
 	// InsecureSkipVerify disables TLS certificate verification. Opt-in only,
 	// for self-signed development servers.
 	InsecureSkipVerify bool
+	// Transports, when set, supplies the (shared) transport instead of one
+	// per Client.
+	Transports *Transports
+	// Jar stores cookies from responses and sends them on later requests;
+	// nil means no cookies are kept.
+	Jar http.CookieJar
 }
 
 // NewClient returns a Client configured by opts.
 func NewClient(opts Options) *Client {
-	hc := &http.Client{}
+	hc := &http.Client{Jar: opts.Jar}
 	if opts.NoFollowRedirects {
 		hc.CheckRedirect = func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		}
 	}
-	if opts.InsecureSkipVerify {
-		tr := http.DefaultTransport.(*http.Transport).Clone()
-		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // #nosec G402 -- explicit user opt-in
-		hc.Transport = tr
+	switch {
+	case opts.Transports != nil:
+		hc.Transport = opts.Transports.get(opts.InsecureSkipVerify)
+	case opts.InsecureSkipVerify:
+		hc.Transport = newTransport(TransportOptions{}, true)
 	}
 	return &Client{http: hc, timeout: opts.Timeout}
 }

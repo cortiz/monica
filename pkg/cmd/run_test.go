@@ -28,8 +28,8 @@ func runCLI(t *testing.T, args ...string) (code int, stdout, stderr string) {
 	singleFile, recursiveLevel = "", 1
 	envName, varFlags, configPath = "", nil, ""
 	reporterName, outPath = "console", ""
-	bail, filters, quiet, dataPath = false, nil, false, ""
-	for _, name := range []string{"env", "var", "config", "single", "recursive", "reporter", "out", "bail", "filter", "quiet", "data"} {
+	bail, filters, quiet, dataPath, insecure = false, nil, false, "", false
+	for _, name := range []string{"env", "var", "config", "single", "recursive", "reporter", "out", "bail", "filter", "quiet", "data", "insecure"} {
 		if f := run.Flags().Lookup(name); f != nil {
 			f.Changed = false
 		}

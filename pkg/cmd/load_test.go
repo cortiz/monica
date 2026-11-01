@@ -18,8 +18,8 @@ func runLoadCLI(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	loadSingle, loadRecursive, loadEnv, loadVarFlags, loadConfig, loadFilters = "", 1, "", nil, "", nil
 	loadVUs, loadDuration, loadIterations, loadGracefulStop, loadThresholds = 1, 0, 0, load.DefaultGracefulStop, nil
-	loadRate, loadStages, loadOut, loadQuiet = "", nil, "", false
-	for _, name := range []string{"single", "recursive", "env", "var", "config", "filter", "vus", "duration", "iterations", "graceful-stop", "threshold", "rate", "stage", "out", "quiet"} {
+	loadRate, loadStages, loadOut, loadQuiet, loadInsecure, loadNoKeepAlive = "", nil, "", false, false, false
+	for _, name := range []string{"single", "recursive", "env", "var", "config", "filter", "vus", "duration", "iterations", "graceful-stop", "threshold", "rate", "stage", "out", "quiet", "insecure", "no-keepalive"} {
 		if f := loadCmd.Flags().Lookup(name); f != nil {
 			f.Changed = false
 		}
@@ -239,6 +239,37 @@ func TestLoadOut(t *testing.T) {
 		_, _, stderr := runLoadCLI(t, "--duration", "1500ms")
 		if strings.Contains(stderr, "running ") || strings.Contains(stderr, "\x1b[2K") {
 			t.Fatalf("progress written to a non-terminal: %q", stderr)
+		}
+	})
+}
+
+func TestInsecureFlag(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+	dir := t.TempDir()
+	mon := writeMon(t, dir, "tls.mon", "GET "+srv.URL+"/\n")
+	chdir(t, dir)
+
+	t.Run("run rejects a self-signed certificate", func(t *testing.T) {
+		if code, _, stderr := runCLI(t, "run", "-s", mon); code != ExitFailed || !strings.Contains(stderr, "certificate") {
+			t.Fatalf("exit %d: %s", code, stderr)
+		}
+	})
+	t.Run("run --insecure", func(t *testing.T) {
+		if code, _, stderr := runCLI(t, "run", "-s", mon, "-k"); code != ExitOK {
+			t.Fatalf("exit %d: %s", code, stderr)
+		}
+	})
+	t.Run("load without --insecure fails every request", func(t *testing.T) {
+		code, stdout, stderr := runLoadCLI(t, "-i", "2", "--threshold", "errors<1%")
+		if code != ExitFailed || !strings.Contains(stdout, "2 failed (100.00%)") {
+			t.Fatalf("exit %d: %s %s", code, stdout, stderr)
+		}
+	})
+	t.Run("load --insecure --no-keepalive", func(t *testing.T) {
+		code, stdout, stderr := runLoadCLI(t, "-i", "3", "--insecure", "--no-keepalive", "--threshold", "errors<1%")
+		if code != ExitOK || !strings.Contains(stdout, "0 failed") {
+			t.Fatalf("exit %d: %s %s", code, stdout, stderr)
 		}
 	})
 }
