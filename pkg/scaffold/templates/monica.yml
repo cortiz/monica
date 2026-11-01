@@ -1,0 +1,21 @@
+# Monica config: settings and variables shared by the .mon files in this folder
+# and below. See https://github.com/cortiz/monica#configuration
+version: 1
+defaults:
+  timeout: 30s
+  headers:
+    Accept: application/json
+  vars:
+    baseUrl: {{baseUrl}}
+envs:
+  dev:
+    vars:
+      baseUrl: {{baseUrl}}
+  # prod:
+  #   vars:
+  #     baseUrl: https://api.example.com
+  #     token: ${PROD_TOKEN}   # read from the environment or .env
+# load:                        # defaults for monica load
+#   vus: 10
+#   duration: 30s
+#   thresholds: ["p95<300ms", "errors<1%"]

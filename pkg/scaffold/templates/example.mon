@@ -1,0 +1,19 @@
+### Get example
+# @name getExample
+# Run it with: monica run -s example.mon
+GET {{baseUrl}}/get?source=monica
+
+> {%
+  test("returns 200", () => expect(res.status).toBe(200));
+%}
+
+### Post example
+# @name postExample
+POST {{baseUrl}}/post
+Content-Type: application/json
+
+{"id": "{{$uuid}}", "name": "ada"}
+
+> {%
+  test("echoes the body", () => expect(res.json().json.name).toBe("ada"));
+%}
