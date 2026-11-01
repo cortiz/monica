@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http/cookiejar"
 	"sort"
+	"sync"
+	"sync/atomic"
 
 	"jmpeax.com/sec/monica/internal/config"
 	"jmpeax.com/sec/monica/pkg/load"
@@ -30,6 +32,11 @@ type SessionOptions struct {
 // vars.set values and cookies carry over between sends, as in one
 // `monica run`.
 type Session struct {
+	// mu serializes use of the runner: the TUI calls Send, SetEnv,
+	// Variables and Close from command goroutines, and the runner is not
+	// safe for concurrent use.
+	mu     sync.Mutex
+	env    atomic.Value // string: read on every redraw, so not under mu
 	opts   SessionOptions
 	envs   []string
 	runner *runner.Runner
@@ -73,6 +80,7 @@ func (s *Session) start(env string) error {
 		run.CookieJar = jar
 	}
 	s.run = run
+	s.env.Store(env)
 	s.last = &collector{}
 	s.runner = runner.NewWithReporter(&s.run, s.last)
 	return nil
@@ -82,10 +90,15 @@ func (s *Session) start(env string) error {
 func (s *Session) Envs() []string { return s.envs }
 
 // Env implements Backend.
-func (s *Session) Env() string { return s.run.Env }
+func (s *Session) Env() string {
+	env, _ := s.env.Load().(string)
+	return env
+}
 
-// SetEnv implements Backend.
+// SetEnv implements Backend. It waits for a send in flight.
 func (s *Session) SetEnv(name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if name != "" && !contains(s.envs, name) {
 		return errors.New("unknown environment " + name)
 	}
@@ -95,6 +108,8 @@ func (s *Session) SetEnv(name string) error {
 
 // Send implements Backend.
 func (s *Session) Send(ctx context.Context, file string, line int) (report.Request, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.run.Context = ctx
 	defer func() { s.run.Context = nil }()
 	s.last.results = nil
@@ -110,6 +125,8 @@ func (s *Session) Send(ctx context.Context, file string, line int) (report.Reque
 
 // Variables implements Backend.
 func (s *Session) Variables(file string) ([]runner.Variable, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.runner.Variables(file)
 }
 
@@ -124,7 +141,7 @@ func (s *Session) Load(ctx context.Context, file string, progress func(load.Prog
 	}
 	opts.Files = []string{file}
 	opts.Run = s.opts.Run
-	opts.Run.Env = s.run.Env
+	opts.Run.Env = s.Env() // load tests run their own runners: no lock held while they run
 	opts.Progress = progress
 	res, err := load.Run(ctx, opts)
 	if err != nil && !errors.Is(err, context.Canceled) {
@@ -137,8 +154,13 @@ func (s *Session) Load(ctx context.Context, file string, progress func(load.Prog
 	return summary, nil
 }
 
-// Close implements Backend.
-func (s *Session) Close() error { return s.runner.Finish() }
+// Close implements Backend. It waits for a send in flight (the TUI
+// cancels it first), so afterAll hooks never run during a request.
+func (s *Session) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.runner.Finish()
+}
 
 func contains(list []string, s string) bool {
 	for _, x := range list {

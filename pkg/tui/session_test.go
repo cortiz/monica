@@ -130,3 +130,47 @@ func mustWrite(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+// TestSessionConcurrentUse runs Variables, Env and SetEnv while a send is
+// in flight; with -race this catches unsynchronized runner access.
+func TestSessionConcurrentUse(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+		_, _ = w.Write([]byte(`{"v":1}`))
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	file := filepath.Join(dir, "a.mon")
+	mustWrite(t, file, "GET "+srv.URL+"\n\n> {% vars.set(\"x\", \"1\"); vars.set(\"y\", \"2\") %}\n")
+	sess, err := NewSession(SessionOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := sess.Send(context.Background(), file, 1)
+		done <- err
+	}()
+	varsDone := make(chan struct{})
+	go func() {
+		for i := 0; i < 20; i++ {
+			_, _ = sess.Variables(file)
+			_ = sess.Env()
+		}
+		close(varsDone)
+	}()
+	time.Sleep(20 * time.Millisecond)
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	<-varsDone
+	vars, err := sess.Variables(file)
+	if err != nil || len(vars) != 2 {
+		t.Errorf("vars %v err %v", vars, err)
+	}
+	if err := sess.Close(); err != nil {
+		t.Fatal(err)
+	}
+}

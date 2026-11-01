@@ -108,9 +108,10 @@ type Model struct {
 	shown   *report.Request           // in the response pane
 	history []historyEntry
 
-	busy    bool
-	cancel  context.CancelFunc
-	sending string
+	busy      bool
+	cancel    context.CancelFunc
+	sending   string
+	switching bool // an env switch is in flight
 
 	envCursor  int
 	vars       []runner.Variable
@@ -202,6 +203,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshResponse()
 		return m, nil
 	case envSetMsg:
+		m.switching = false
 		if msg.err != nil {
 			m.setStatus(msg.err.Error(), true)
 		} else {
@@ -389,10 +391,13 @@ func (m *Model) overlayKey(s string) tea.Cmd {
 				return nil
 			}
 			env := envs[m.envCursor]
-			if env == m.backend.Env() {
+			if env == m.backend.Env() || m.switching {
 				return nil
 			}
-			return func() tea.Msg { return envSetMsg{m.backend.SetEnv(env)} }
+			m.switching = true
+			m.setStatus("switching to "+envName(env)+"…", false)
+			b := m.backend
+			return func() tea.Msg { return envSetMsg{b.SetEnv(env)} }
 		case "esc", "q", "e":
 			m.overlay = overlayNone
 		}
@@ -455,6 +460,10 @@ func (m *Model) send(n *node) tea.Cmd {
 		m.setStatus("a load test is running (L shows it)", true)
 		return nil
 	}
+	if m.switching {
+		m.setStatus("switching environments: try again in a moment", true)
+		return nil
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	m.busy, m.cancel, m.sending = true, cancel, n.name
 	m.setStatus("", false)
@@ -485,8 +494,8 @@ func (m *Model) startLoad() tea.Cmd {
 	if m.load.running {
 		return nil
 	}
-	if m.busy {
-		m.setStatus("wait for the running request first", true)
+	if m.busy || m.switching {
+		m.setStatus("wait for the running request or environment switch first", true)
 		m.overlay = overlayNone
 		return nil
 	}

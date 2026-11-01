@@ -296,6 +296,20 @@ func TestEnvPicker(t *testing.T) {
 	if m.overlay != overlayNone {
 		t.Error("esc does not close the picker")
 	}
+
+	// While a switch is in flight, sends and load tests wait.
+	press(m, "e")
+	cmd := press(m, "up", "enter") // prod -> dev
+	if cmd == nil || !m.switching {
+		t.Fatal("switch not marked in flight")
+	}
+	if c := press(m, "enter"); c != nil || !strings.Contains(m.status, "switching environments") {
+		t.Errorf("send allowed during a switch (status %q)", m.status)
+	}
+	run(t, m, cmd)
+	if m.switching {
+		t.Error("switch flag not cleared")
+	}
 }
 
 func TestVariablesPanel(t *testing.T) {
