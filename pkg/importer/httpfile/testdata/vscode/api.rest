@@ -1,0 +1,34 @@
+@contentType = application/json
+@products = {{apiBase}}/products
+
+### Log in
+# @name login
+POST {{baseUrl}}/login
+Content-Type: {{contentType}}
+
+{"user": "{{user}}", "password": "{{$processEnv API_PASSWORD}}"}
+
+### List products
+# @name products
+GET {{products}}?limit=2&currency=EUR
+Authorization: Bearer {{login.response.body.$.token}}
+X-Api-Key: {{$dotenv API_KEY}}
+X-Session: {{login.response.headers.X-Session}}
+
+### Create order
+POST /orders
+Host: {{host}}
+Authorization: Bearer {{login.response.body.$.token}}
+Content-Type: application/json
+X-Ref: {{products.response.body.$.items[0].name}}
+
+<@ ./order.json
+
+### Dynamic values
+GET {{baseUrl}}/dynamic
+X-Guid: {{$guid}}
+X-Date: {{$datetime iso8601}}
+X-Yesterday: {{$timestamp -1 d}}
+X-Rand: {{$randomInt 1 10}}
+X-Local: {{$localDatetime "DD-MM-YYYY"}}
+X-Rfc: {{$datetime rfc1123 1 h}}
