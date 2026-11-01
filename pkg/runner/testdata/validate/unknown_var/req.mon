@@ -1,0 +1,4 @@
+# @name getUser
+GET https://example.test/users/{{userId}}
+Authorization: Bearer {{token}}
+
