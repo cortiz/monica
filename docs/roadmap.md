@@ -288,6 +288,10 @@ VUs), `--no-keepalive`, `-k/--insecure` (also on `monica run`), a cookie jar per
   file as is (`Request.Parts`: text parts expanded, file parts not). Whole-body uploads were
   already `< path`. `import curl` converts `-F`.
 - 8.4 Docs site / full format reference; examples folder.
+  ✅ Done: `examples/` (one feature per folder, against httpbin.org, with a README) run by
+  `pkg/cmd/examples_test.go` against a local httpbin stand-in; `Readme.md` stays the full
+  reference (contents line, features list refreshed). A hosted docs site was not set up (no
+  generator dependency); the Markdown renders on GitHub.
 - 8.5 Release: goreleaser + Docker image updated with new commands.
 
 ---

@@ -1,0 +1,33 @@
+# Plain requests: a GET with a query string, a POST with a JSON body, and a
+# request that is parsed but not sent.
+
+### Get with query
+# @name getQuery
+# @timeout 5s
+GET {{baseUrl}}/get?lang=go&page=2
+X-Example: basics
+
+> {%
+  test("status 200", () => expect(res.status).toBe(200));
+  test("query echoed", () => expect(res.json().args).toEqual({lang: "go", page: "2"}));
+  test("answers in JSON", () => expect(res.headers.get("Content-Type")).toContain("json"));
+%}
+
+### Post JSON
+# @name postJson
+POST {{baseUrl}}/post
+Content-Type: application/json
+
+{"id": "{{$uuid}}", "name": "ada", "admin": false}
+
+> {%
+  const sent = res.json().json;
+  test("body echoed", () => {
+    expect(sent.name).toBe("ada");
+    expect(sent.id).toMatch(/^[0-9a-f-]{36}$/);
+  });
+%}
+
+### Not sent
+# @skip shows how a request is kept but not sent
+DELETE {{baseUrl}}/delete

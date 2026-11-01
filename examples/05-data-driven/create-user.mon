@@ -1,0 +1,16 @@
+# Data-driven: run once per row of users.csv, with the row's columns as
+# variables:
+#   monica run -s 05-data-driven/create-user.mon --data 05-data-driven/users.csv
+# Without --data, name comes from monica.yml and role from the default below.
+
+# @name createUser
+< {% if (!vars.has("role")) vars.set("role", "guest") %}
+POST {{baseUrl}}/anything/users
+Content-Type: application/json
+
+{"name": "{{name}}", "role": "{{role}}", "row": {{$randomInt}}}
+
+> {%
+  test("user echoed", () => expect(res.json().json.name).toBe(vars.get("name")));
+  console.log("created", vars.get("name"), "as", vars.get("role"), "row", monica.iteration);
+%}

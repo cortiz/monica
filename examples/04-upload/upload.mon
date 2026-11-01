@@ -1,0 +1,32 @@
+# Uploads: a multipart form with a text field and a file, then a whole file as
+# the request body.
+
+### Multipart form
+# @name uploadForm
+POST {{baseUrl}}/post
+Content-Type: multipart/form-data; boundary=ExampleBoundary
+
+--ExampleBoundary
+Content-Disposition: form-data; name="title"
+
+Scores for {{name}}
+--ExampleBoundary
+Content-Disposition: form-data; name="report"; filename="report.csv"
+Content-Type: text/csv
+
+< ./files/report.csv
+--ExampleBoundary--
+
+> {%
+  test("form field", () => expect(res.json().form.title).toBe("Scores for " + vars.get("name")));
+  test("file uploaded", () => expect(res.json().files.report).toContain("1,ada,98"));
+%}
+
+### Whole file as the body
+# @name uploadBody
+PUT {{baseUrl}}/put
+Content-Type: text/csv
+
+< ./files/report.csv
+
+> {% test("body is the file", () => expect(res.json().data).toBe("id,name,score\n1,ada,98\n2,grace,95\n")) %}
