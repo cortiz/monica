@@ -226,7 +226,7 @@ func TestOptionsValidate(t *testing.T) {
 		{"stages and duration", Options{VUs: 1, Duration: time.Second, Stages: []Stage{{time.Second, 1}}, Files: files}, "set either a duration or stages"},
 		{"bad stage", Options{VUs: 1, Stages: []Stage{{time.Second, 1}, {0, 1}}, Files: files}, "stage 2: needs a positive duration"},
 		{"negative target", Options{VUs: 1, Stages: []Stage{{time.Second, -1}}, Files: files}, "stage 1"},
-		{"stages never reach a VU", Options{VUs: 0, Stages: []Stage{{time.Second, 0.5}}, Files: files}, "stages never reach 1 VU"},
+		{"stages never reach a VU", Options{VUs: 0, Stages: []Stage{{time.Second, 0.4}}, Files: files}, "stages never reach 1 VU"},
 		{"no files", Options{VUs: 1, Iterations: 1}, "no .mon files"},
 	}
 	for _, tt := range tests {
@@ -399,8 +399,9 @@ func TestRunRampingVUs(t *testing.T) {
 	t.Run("never starts VUs the ramp does not reach", func(t *testing.T) {
 		srv := newConcurrencyServer(t, 0)
 		file := writeFile(t, t.TempDir(), "a.mon", "GET "+srv.URL+"/a\n")
-		// 1 → 3 VUs over 200ms: VU 3 only at the very end, VU 2 halfway.
-		res, err := Run(context.Background(), Options{VUs: 1, Stages: []Stage{{200 * time.Millisecond, 2.9}}, Files: []string{file}})
+		// 1 → 2.4 over 200ms: VU 2 joins at 1.5 (about 70ms); VU 3 would
+		// need 2.5, which the ramp never reaches.
+		res, err := Run(context.Background(), Options{VUs: 1, Stages: []Stage{{200 * time.Millisecond, 2.4}}, Files: []string{file}})
 		if err != nil {
 			t.Fatal(err)
 		}

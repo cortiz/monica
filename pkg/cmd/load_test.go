@@ -114,8 +114,8 @@ func TestLoadCommand(t *testing.T) {
 			wantHits: 4, wantOut: []string{"monica load: 100.0 iterations/s, 4 iterations, up to 2 VUs ("},
 		},
 		{
-			name: "ramping VUs from flags", mon: "GET " + srv.URL + "/a\n", args: []string{"--stage", "100ms:2", "--stage", "100ms:0"},
-			wantHits: -1, wantOut: []string{"monica load: ramping VUs 0 → 2 → 0 over 200ms\n"},
+			name: "ramping VUs from flags", mon: "GET " + srv.URL + "/a\n", args: []string{"--stage", "300ms:2", "--stage", "300ms:0"},
+			wantHits: -1, wantOut: []string{"monica load: ramping VUs 0 → 2 → 0 over 600ms\n"},
 		},
 		{
 			name: "stages and rate from config", config: "version: 1\nload:\n  rate: 10/s\n  vus: 3\n  stages:\n    - {duration: 200ms, target: 30}\n", mon: "GET " + srv.URL + "/a\n",
@@ -127,7 +127,7 @@ func TestLoadCommand(t *testing.T) {
 		},
 		{
 			name: "--stage replaces config duration", config: "version: 1\nload:\n  duration: 1h\n", mon: "GET " + srv.URL + "/a\n",
-			args: []string{"--stage", "100ms:1"}, wantHits: -1, wantOut: []string{"ramping VUs 0 → 1 over 100ms"},
+			args: []string{"--stage", "300ms:1"}, wantHits: -1, wantOut: []string{"ramping VUs 0 → 1 over 300ms"},
 		},
 		{
 			name: "stage and duration flags together", mon: "GET " + srv.URL + "/a\n", args: []string{"--stage", "1s:1", "--duration", "1s"},
