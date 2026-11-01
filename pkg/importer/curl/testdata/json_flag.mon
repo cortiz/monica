@@ -1,0 +1,7 @@
+# @timeout 5s
+POST https://api.example.com/items
+Authorization: Basic YWRhOnB3
+Content-Type: application/json
+Accept: application/json
+
+{"id": 1}

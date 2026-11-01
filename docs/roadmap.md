@@ -276,6 +276,11 @@ VUs), `--no-keepalive`, `-k/--insecure` (also on `monica run`), a cookie jar per
   (`baseUrl` from `--base-url`, `dev` env), `example.mon` (GET + POST with tests) and appends
   `.env` / `monica.local.yml` to `.gitignore`; existing files kept unless `--force`.
 - 8.2 `monica import curl '<cmd>'` → `.mon` (Postman/Bruno import live in Phase 9).
+  ✅ Done: `pkg/importer` (`Request` + `WriteMon`, refuses bodies the format can't hold — the
+  shared writer for 9.2/9.3) and `pkg/importer/curl` (shell-word splitter incl. `$'…'` and
+  `^` continuations; method/headers/data/`--json`/`-G`/`-u`/`-T`/`-m`; warnings for the
+  rest). Command from an argument, stdin or after `--`; `-o`, `--force`, `--name`.
+  `-F` waits for multipart in 8.3.
 - 8.3 Cookies (`cookie jar` per run for `monica run`; `monica load` has one per VU since 7.6), multipart/form-data, file upload.
 - 8.4 Docs site / full format reference; examples folder.
 - 8.5 Release: goreleaser + Docker image updated with new commands.

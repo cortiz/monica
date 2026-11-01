@@ -19,6 +19,38 @@ Monica is designed to handle Network requests and responses.
 	them. Existing `monica.yml` and `example.mon` files are kept unless `-f, --force`; each
 	file is reported as `created`, `overwritten`, `updated` or `skipped`.
 
+* Turn a curl command (e.g. from the browser's "Copy as cURL") into a request
+	```bash
+	monica import curl 'curl https://api.example.com/users -H "Accept: application/json"'
+	pbpaste | monica import curl -o users.mon      # read the command from stdin
+	monica import curl -- curl -sS https://api.example.com/health   # already split by the shell
+	```
+	The `.mon` text goes to stdout, or to `-o, --out <file>` (an existing file is kept unless
+	`-f, --force`); `--name <name>` sets `@name`. Quoting follows the shell: `'...'`, `"..."`,
+	`$'...'`, backslash escapes, and `\` / `^` line continuations (bash and Windows `cmd`
+	copies). Converted options:
+
+	| curl | `.mon` |
+	|------|--------|
+	| `-X`, `--request` | method (otherwise `HEAD` with `-I`, `PUT` with `-T`, `POST` with data, else `GET`) |
+	| `-H`, `--header` | header (`Name;` sends an empty value; `Name:` is ignored) |
+	| `-d`, `--data`, `--data-ascii` | body, line breaks removed; several are joined with `&`; adds `Content-Type: application/x-www-form-urlencoded` unless set |
+	| `--data-raw`, `--data-binary`, `--data-urlencode` | body as is / URL-encoded (`name=value` encodes the value) |
+	| `-d @file`, `--data-binary @file`, `-T file` | `< file` body (paths relative to the `.mon` file) |
+	| `--json` | body plus `Content-Type` and `Accept: application/json` |
+	| `-G`, `--get`, `--url-query` | data appended to the URL query |
+	| `-u user:pass`, `--oauth2-bearer` | `Authorization: Basic …` / `Bearer …` header |
+	| `-A`, `-e`, `-b name=value` | `User-Agent`, `Referer`, `Cookie` headers |
+	| `-m`, `--max-time` | `# @timeout` |
+	| several URLs | one request each, separated by `###` |
+
+	A URL without a scheme gets `http://`, as in curl. Options that don't change the request
+	(`-s`, `-v`, `-L`, `--compressed`, `-o`, …) are dropped; others (`-k`, `--proxy`, cookie
+	files, unknown options) are dropped with a warning on stderr, as are shell variables
+	(`$TOKEN`, kept as text) and anything after an unquoted `|`, `;`, `&`, `<` or `>`.
+	`-F`/`--form`, `-H @file` and data from stdin are errors. Text such as `{{x}}` is kept and
+	warned about, since monica reads it as a variable.
+
 * Runs all `mon` files in the current directory
 	```bash
 	monica run 

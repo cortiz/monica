@@ -1,0 +1,8 @@
+curl 'https://api.example.com/v1/users?page=2' \
+  -H 'accept: application/json, text/plain, */*' \
+  -H 'accept-language: en-US,en;q=0.9' \
+  -H 'authorization: Bearer abc.def' \
+  -H 'content-type: application/json' \
+  -b 'session=xyz; theme=dark' \
+  --data-raw $'{"name":"O\'Brien","tags":["a","b"]}' \
+  --compressed
