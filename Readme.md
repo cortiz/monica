@@ -181,6 +181,18 @@ phases (avg / p95)  dns 0 / 0 · connect 95µs / 410µs · tls 0 / 0 · waiting 
   config, unknown variable, an iteration with no requests left after `--filter`/`@skip`)
   stop the test with exit code `2`, and Ctrl-C prints the summary (and thresholds) so far
   with exit code `1`.
+* **Live progress** — while the test runs, a line on stderr is redrawn every second when
+  stderr is a terminal (`-q` turns it off):
+  `running 12s/30s · VUs 8/10 · 1234 iterations · 2468 requests · 82.0 rps · p95 18.0ms · 0.12% failed`
+  (active/started VUs; rps and p95 over the last second).
+* **JSON report** — `-o, --out report.json` also writes the results as JSON; `--out -` prints
+  the JSON on stdout instead of the text summary, for piping. It holds the `config` the test
+  ran with, `durationMs`, `vus`, `iterations`, `interrupted`, `dropped`, `aborted` (Ctrl-C),
+  `total` and one entry per request in `requests` (`name`, `file`, `line`, `requests`,
+  `failed`, `failRate`, `rps`, `bytesSent`, `bytesReceived`, `latency` {`count`, `min`,
+  `avg`, `med`, `p90`, `p95`, `p99`, `max`} and `phases` {`dns`, `connect`, `tls`, `waiting`,
+  `receiving`: {`avg`, `p95`}}), `thresholds` [{`threshold`, `passed`, `actual`}] and
+  `passed`. Times are milliseconds.
 * Only warnings and errors are logged (`console.log` output too), unless `--debug`.
 
 | Flag | Meaning |
@@ -191,6 +203,8 @@ phases (avg / p95)  dns 0 / 0 · connect 95µs / 410µs · tls 0 / 0 · waiting 
 | `--stage <d:target>` | Ramp step, e.g. `30s:50`; repeatable, replaces `load.stages`; not with `--duration` |
 | `--rate <n/period>` | Start iterations at a fixed rate, e.g. `100/s` (default `load.rate`) |
 | `--graceful-stop <d>` | Time running iterations get at the end of `--duration` or the stages (default `30s`) |
+| `-o, --out <file>` | Also write a JSON report; `-` prints it on stdout instead of the text summary |
+| `-q, --quiet` | No live progress line |
 | `--threshold <cond>` | Pass/fail condition, e.g. `p95<300ms`, `login:errors<1%`; repeatable, replaces `load.thresholds` |
 | `-s`, `-r`, `-e`, `--var`, `-c`, `--filter` | As for `monica run` |
 
