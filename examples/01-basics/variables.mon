@@ -1,0 +1,27 @@
+# Variables: {{name}} from monica.yml (defaults, the selected --env, --var),
+# built-ins, and the default headers monica.yml adds to every request.
+
+### Config variables and built-ins
+# @name builtins
+GET {{baseUrl}}/anything/{{$uuid}}?ts={{$timestamp}}&n={{$randomInt}}&size={{pageSize}}
+
+> {%
+  const echo = res.json();
+  test("uuid in the path", () => expect(echo.url).toMatch(/anything\/[0-9a-f-]{36}\?/));
+  test("timestamp is a number", () => expect(Number(echo.args.ts)).toBeGreaterThan(1700000000));
+  test("random int 0-999", () => expect(Number(echo.args.n)).toBeLessThanOrEqual(999));
+  test("config var", () => expect(echo.args.size).toBe("20"));
+%}
+
+### Default headers from monica.yml
+# @name defaultHeaders
+GET {{baseUrl}}/headers
+
+> {% test("Accept from defaults.headers", () => expect(res.json().headers.Accept).toBe("application/json")) %}
+
+### A request header wins over the default
+# @name ownHeader
+GET {{baseUrl}}/headers
+Accept: text/plain
+
+> {% test("own Accept", () => expect(res.json().headers.Accept).toBe("text/plain")) %}

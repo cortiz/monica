@@ -1,0 +1,26 @@
+{
+  "info": { "name": "Todo API", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+  "variable": [{ "key": "baseUrl", "value": "https://httpbin.org" }],
+  "item": [
+    {
+      "name": "Create todo",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('created', () => pm.response.to.have.status(200));",
+        "pm.environment.set('todoTitle', pm.response.json().json.title);"
+      ] } }],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\"title\": \"buy-milk\"}", "options": { "raw": { "language": "json" } } },
+        "url": "{{baseUrl}}/post"
+      }
+    },
+    {
+      "name": "Find todo",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('found', () => pm.expect(pm.response.json().args.title).to.equal(pm.environment.get('todoTitle')));"
+      ] } }],
+      "request": { "method": "GET", "url": "{{baseUrl}}/get?title={{todoTitle}}" }
+    }
+  ]
+}

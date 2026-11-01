@@ -1,0 +1,17 @@
+# Cookies are removed when the server expires them.
+
+### Set two cookies
+GET {{baseUrl}}/cookies/set?theme=dark&lang=en
+
+> {%
+  // The run's one cookie jar may hold cookies from earlier files too.
+  test("both set", () => expect(res.json().cookies).toHaveProperty("theme", "dark") && expect(res.json().cookies).toHaveProperty("lang", "en"));
+%}
+
+### Delete one
+GET {{baseUrl}}/cookies/delete?theme
+
+> {%
+  test("theme gone", () => expect(res.json().cookies).not.toHaveProperty("theme"));
+  test("lang kept", () => expect(res.json().cookies.lang).toBe("en"));
+%}

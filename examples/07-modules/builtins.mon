@@ -1,0 +1,55 @@
+# The built-in modules: monica/crypto, monica/encoding, monica/random and
+# monica/jsonpath (implemented in Go, always available).
+
+### Hashes, HMAC and encodings
+# @name crypto
+< {%
+  const { sha256, hmac } = require("monica/crypto");
+  const enc = require("monica/encoding");
+  vars.set("digest", sha256("hello"));
+  vars.set("mac", hmac("sha256", "key", "hello", "base64url"));
+  vars.set("b64", enc.base64Encode("monica:rocks"));
+%}
+GET {{baseUrl}}/anything/crypto?d={{digest}}&m={{mac}}&b={{b64}}
+
+> {%
+  const enc = require("monica/encoding");
+  const args = res.json().args;
+  test("sha256", () => expect(args.d).toBe("2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"));
+  test("hmac base64url has no padding", () => expect(args.m).not.toContain("="));
+  test("base64 round trip", () => expect(enc.base64Decode(args.b)).toBe("monica:rocks"));
+%}
+
+### Random values
+# @name random
+< {%
+  const random = require("monica/random");
+  vars.set("orderId", random.uuid());
+  vars.set("pin", random.string(6, "0123456789"));
+  vars.set("qty", random.int(1, 5));
+%}
+POST {{baseUrl}}/post
+Content-Type: application/json
+
+{"orderId": "{{orderId}}", "pin": "{{pin}}", "qty": {{qty}}}
+
+> {%
+  const sent = res.json().json;
+  test("pin is 6 digits", () => expect(sent.pin).toMatch(/^\d{6}$/));
+  test("qty in range", () => { expect(sent.qty).toBeGreaterThanOrEqual(1); expect(sent.qty).toBeLessThanOrEqual(5); });
+%}
+
+### JSONPath queries
+# @name jsonpath
+POST {{baseUrl}}/post
+Content-Type: application/json
+
+{"store": {"books": [{"title": "Dune", "price": 9}, {"title": "Emma", "price": 4}], "bike": {"price": 120}}}
+
+> {%
+  const jp = require("monica/jsonpath");
+  const body = res.json().json;
+  test("all titles", () => expect(jp.query(body, "$.store.books[*].title")).toEqual(["Dune", "Emma"]));
+  test("first match", () => expect(jp.value(body, "$..bike.price")).toBe(120));
+  test("slice", () => expect(jp.query(body, "$.store.books[-1:].title")).toEqual(["Emma"]));
+%}

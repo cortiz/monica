@@ -1,0 +1,4 @@
+{
+  "customer": { "name": "Ada Lovelace", "tier": "gold" },
+  "items": [{ "sku": "pen-01", "qty": 2, "price": 2.5 }]
+}

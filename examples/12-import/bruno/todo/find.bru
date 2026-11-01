@@ -1,0 +1,17 @@
+meta {
+  name: Find todo
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/get?title={{todoTitle}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("found", function () {
+    expect(res.body.args.title).to.equal(bru.getVar("todoTitle"));
+  });
+}

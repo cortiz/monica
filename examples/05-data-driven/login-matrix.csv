@@ -1,0 +1,3 @@
+user,pass,expected
+ada,right,200
+ada,wrong,401

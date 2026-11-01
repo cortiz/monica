@@ -1,0 +1,10 @@
+# A JSON payload kept in its own file (sent byte for byte, no {{}} expansion).
+
+### Create from a payload file
+# @name createFromFile
+POST {{baseUrl}}/post
+Content-Type: application/json
+
+< ./payloads/user.json
+
+> {% test("parsed by the server", () => expect(res.json().json.roles).toEqual(["admin", "dev"])) %}

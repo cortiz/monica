@@ -1,0 +1,15 @@
+# Requests here get both folders' hooks: X-Run-Id (outer) and an admin
+# bearer token (inner). The second request is skipped by the hook.
+
+### Admin request
+GET {{baseUrl}}/headers
+
+> {%
+  const h = res.json().headers;
+  test("outer hook ran", () => expect(h["X-Run-Id"]).toBe(vars.get("runId")));
+  test("inner hook ran", () => expect(h.Authorization).toBe("Bearer " + vars.get("adminToken")));
+%}
+
+### Destructive admin request (skipped unless --env staging)
+DELETE {{baseUrl}}/delete
+X-Destructive: yes
