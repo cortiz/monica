@@ -14,8 +14,8 @@ import (
 func runLoadCLI(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	loadSingle, loadRecursive, loadEnv, loadVarFlags, loadConfig, loadFilters = "", 1, "", nil, "", nil
-	loadVUs, loadDuration, loadIterations, loadGracefulStop = 1, 0, 0, load.DefaultGracefulStop
-	for _, name := range []string{"single", "recursive", "env", "var", "config", "filter", "vus", "duration", "iterations", "graceful-stop"} {
+	loadVUs, loadDuration, loadIterations, loadGracefulStop, loadThresholds = 1, 0, 0, load.DefaultGracefulStop, nil
+	for _, name := range []string{"single", "recursive", "env", "var", "config", "filter", "vus", "duration", "iterations", "graceful-stop", "threshold"} {
 		if f := loadCmd.Flags().Lookup(name); f != nil {
 			f.Changed = false
 		}
@@ -78,6 +78,31 @@ func TestLoadCommand(t *testing.T) {
 		{
 			name: "zero vus", mon: "GET " + srv.URL + "/a\n", args: []string{"-u", "0"},
 			wantCode: ExitUsage, wantErr: "vus must be at least 1",
+		},
+		{
+			name: "passing thresholds", mon: "# @name a\nGET " + srv.URL + "/a\n", args: []string{"-i", "3", "--threshold", "p95<10s", "--threshold", "a:errors<1%"},
+			wantHits: 3, wantOut: []string{"\nthresholds\n  ✓ p95<10s      p95=", "  ✓ a:errors<1%  errors=0.00%"},
+		},
+		{
+			name: "failing threshold exits 1", mon: "GET " + srv.URL + "/fail\n> {% test(\"ok\", () => expect(res.status).toBe(200)) %}\n",
+			args: []string{"-i", "2", "--threshold", "errors<50%"}, wantCode: ExitFailed, wantHits: 2,
+			wantOut: []string{"  ✗ errors<50%  errors=100.00%"}, wantErr: "1 of 1 thresholds failed",
+		},
+		{
+			name: "thresholds from config", config: "version: 1\nload:\n  thresholds: [\"rps>1000000\"]\n", mon: "GET " + srv.URL + "/a\n",
+			wantCode: ExitFailed, wantHits: 1, wantOut: []string{"✗ rps>1000000"},
+		},
+		{
+			name: "--threshold replaces the config list", config: "version: 1\nload:\n  thresholds: [\"rps>1000000\"]\n", mon: "GET " + srv.URL + "/a\n",
+			args: []string{"--threshold", "max<1m"}, wantHits: 1, wantOut: []string{"✓ max<1m"},
+		},
+		{
+			name: "invalid threshold flag", mon: "GET " + srv.URL + "/a\n", args: []string{"--threshold", "p95<fast"},
+			wantCode: ExitUsage, wantErr: `invalid threshold "p95<fast"`,
+		},
+		{
+			name: "invalid config threshold", config: "version: 1\nload:\n  thresholds: [\"p95\"]\n", mon: "GET " + srv.URL + "/a\n",
+			wantCode: ExitUsage, wantErr: "monica.yml: load.thresholds: invalid threshold",
 		},
 		{
 			name: "negative graceful stop", mon: "GET " + srv.URL + "/a\n", args: []string{"--graceful-stop", "-1s"},

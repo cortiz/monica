@@ -249,6 +249,8 @@ two, <1.6% error, mergeable — one per VU, merged at the end); phases DNS / con
 waiting / receiving; body bytes sent/received. Summary table on stdout (JSON in 7.5).
 
 **7.3 Thresholds** — from `load.thresholds` or `--threshold "p95<300ms"`; failing → exit 1.
+✅ Done: `[request:]metric op value` with min/avg/med/max/pNN/p(NN.N)/errors/rps; flags
+replace the config list; invalid ones are usage errors (exit 2) before the test starts.
 
 **7.4 Executors** — `--rate 100/s` (constant arrival) and `stages:` ramp-up/down in `monica.yml`.
 
