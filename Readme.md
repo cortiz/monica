@@ -55,6 +55,7 @@ Monica is designed to handle Network requests and responses.
 | `--filter <glob>` | Only run requests whose `@name`, `###` title or `METHOD URL` matches; `*` matches any text, `?` one character; repeatable |
 | `-q, --quiet` | Hide response headers and bodies in the console report |
 | `--data <file>` | Run once per row of a `.csv` or `.json` file, with the row's values as variables |
+| `-k, --insecure` | Skip TLS certificate verification (as `insecureSkipVerify: true` in every config) |
 
 The report goes to stdout; logs and errors go to stderr. For each request it prints a status
 line, the response, and ✓/✗ per test (with the failure message), then a summary:
@@ -193,6 +194,12 @@ phases (avg / p95)  dns 0 / 0 · connect 95µs / 410µs · tls 0 / 0 · waiting 
   `avg`, `med`, `p90`, `p95`, `p99`, `max`} and `phases` {`dns`, `connect`, `tls`, `waiting`,
   `receiving`: {`avg`, `p95`}}), `thresholds` [{`threshold`, `passed`, `actual`}] and
   `passed`. Times are milliseconds.
+* **Connections and cookies** — all VUs share one connection pool that keeps an idle
+  (kept-alive) connection per VU and host, so connections are reused instead of reopened;
+  `--no-keepalive` opens a new connection for every request (the `connect`/`tls` phases then
+  show the handshake cost). Each VU has its own cookie jar: cookies a response sets are sent
+  on that VU's later requests (to matching hosts), never another VU's, so a VU that logs in
+  keeps its session. `-k, --insecure` skips TLS certificate verification.
 * Only warnings and errors are logged (`console.log` output too), unless `--debug`.
 
 | Flag | Meaning |
@@ -205,6 +212,8 @@ phases (avg / p95)  dns 0 / 0 · connect 95µs / 410µs · tls 0 / 0 · waiting 
 | `--graceful-stop <d>` | Time running iterations get at the end of `--duration` or the stages (default `30s`) |
 | `-o, --out <file>` | Also write a JSON report; `-` prints it on stdout instead of the text summary |
 | `-q, --quiet` | No live progress line |
+| `--no-keepalive` | New connection for every request |
+| `-k, --insecure` | Skip TLS certificate verification |
 | `--threshold <cond>` | Pass/fail condition, e.g. `p95<300ms`, `login:errors<1%`; repeatable, replaces `load.thresholds` |
 | `-s`, `-r`, `-e`, `--var`, `-c`, `--filter` | As for `monica run` |
 

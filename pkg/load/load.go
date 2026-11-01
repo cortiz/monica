@@ -9,12 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http/cookiejar"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"jmpeax.com/sec/monica/internal/logging"
+	"jmpeax.com/sec/monica/pkg/net"
 	"jmpeax.com/sec/monica/pkg/report"
 	"jmpeax.com/sec/monica/pkg/runner"
 )
@@ -51,6 +53,10 @@ type Options struct {
 	// Run is the runner configuration each VU starts from; Context,
 	// NoSummary and VU are set per VU.
 	Run runner.Opts
+	// NoKeepAlive opens a new connection for every request. Otherwise all
+	// VUs share one connection pool that keeps an idle connection per VU
+	// and host.
+	NoKeepAlive bool
 	// Progress, when set, is called every ProgressInterval (default 1s)
 	// while the test runs, from its own goroutine.
 	Progress         func(Progress)
@@ -144,6 +150,13 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		defer t2.Stop()
 	}
 
+	if opts.Run.Transports == nil {
+		opts.Run.Transports = net.NewTransports(net.TransportOptions{
+			MaxIdleConnsPerHost: max(opts.maxVUs(), 1),
+			DisableKeepAlives:   opts.NoKeepAlive,
+		})
+		defer opts.Run.Transports.CloseIdle()
+	}
 	t := &test{opts: opts, hard: hardCtx, iter: iterCtx, stopIter: iterStop}
 	t.abort = func(err error) {
 		t.abortOnce.Do(func() {
@@ -371,6 +384,9 @@ func (t *test) newVU() *vu {
 	t.mu.Unlock()
 	ropts := t.opts.Run
 	ropts.Context, ropts.NoSummary, ropts.VU = t.hard, true, v.id
+	if jar, err := cookiejar.New(nil); err == nil { // never fails without options
+		ropts.CookieJar = jar
+	}
 	v.sk = &sink{t: t, m: metrics{}}
 	v.r = runner.NewWithReporter(&ropts, v.sk)
 	return v

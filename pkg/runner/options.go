@@ -2,8 +2,10 @@ package runner
 
 import (
 	"context"
+	"net/http"
 
 	"jmpeax.com/sec/monica/internal/config"
+	"jmpeax.com/sec/monica/pkg/net"
 )
 
 type Opts struct {
@@ -34,4 +36,14 @@ type Opts struct {
 	// VU is monica.vu in scripts: the 1-based virtual user under monica
 	// load, 0 otherwise.
 	VU int
+	// Insecure skips TLS certificate verification for every request, as if
+	// insecureSkipVerify were set in every config (--insecure).
+	Insecure bool
+	// Transports, when set, is the connection pool HTTP clients use
+	// (shared between runners under monica load); nil gives each project
+	// its own.
+	Transports *net.Transports
+	// CookieJar, when set, keeps cookies between requests (one per VU
+	// under monica load); nil keeps none.
+	CookieJar http.CookieJar
 }

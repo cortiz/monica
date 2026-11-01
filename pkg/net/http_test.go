@@ -12,6 +12,9 @@ import (
 
 	"jmpeax.com/sec/monica/pkg/net"
 	"jmpeax.com/sec/monica/pkg/request"
+	gonet "net"
+	"net/http/cookiejar"
+	"sync/atomic"
 )
 
 // echoed is what the echo server saw.
@@ -329,4 +332,87 @@ func TestTimings(t *testing.T) {
 			}
 		})
 	}
+}
+
+// connCounter is a server that counts the TCP connections it accepts.
+func connCounter(t *testing.T, tlsServer bool) (*httptest.Server, func() int64) {
+	t.Helper()
+	var conns atomic.Int64
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.SetCookie(w, &http.Cookie{Name: "seen", Value: "1"})
+		_, _ = w.Write([]byte(r.Header.Get("Cookie")))
+	}))
+	srv.Config.ConnState = func(_ gonet.Conn, s http.ConnState) {
+		if s == http.StateNew {
+			conns.Add(1)
+		}
+	}
+	if tlsServer {
+		srv.StartTLS()
+	} else {
+		srv.Start()
+	}
+	t.Cleanup(srv.Close)
+	return srv, conns.Load
+}
+
+func TestTransports(t *testing.T) {
+	get := func(t *testing.T, c *net.Client, url string) *net.HTTPResponse {
+		t.Helper()
+		res, err := c.Do(&request.Request{Method: "GET", URL: url, Headers: http.Header{}}, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	t.Run("clients share connections", func(t *testing.T) {
+		srv, conns := connCounter(t, false)
+		pool := net.NewTransports(net.TransportOptions{MaxIdleConnsPerHost: 8})
+		defer pool.CloseIdle()
+		a, b := net.NewClient(net.Options{Transports: pool}), net.NewClient(net.Options{Transports: pool})
+		for i := 0; i < 5; i++ {
+			get(t, a, srv.URL)
+			get(t, b, srv.URL)
+		}
+		if n := conns(); n != 1 {
+			t.Fatalf("10 sequential requests from 2 clients opened %d connections, want 1", n)
+		}
+	})
+	t.Run("keep-alive disabled", func(t *testing.T) {
+		srv, conns := connCounter(t, false)
+		pool := net.NewTransports(net.TransportOptions{DisableKeepAlives: true})
+		c := net.NewClient(net.Options{Transports: pool})
+		for i := 0; i < 4; i++ {
+			if res := get(t, c, srv.URL); res.Timings.Reused {
+				t.Fatal("connection reused with keep-alive off")
+			}
+		}
+		if n := conns(); n != 4 {
+			t.Fatalf("opened %d connections, want 4", n)
+		}
+	})
+	t.Run("insecure and secure use separate transports", func(t *testing.T) {
+		srv, _ := connCounter(t, true)
+		pool := net.NewTransports(net.TransportOptions{})
+		if _, err := net.NewClient(net.Options{Transports: pool}).Do(&request.Request{Method: "GET", URL: srv.URL, Headers: http.Header{}}, false); err == nil {
+			t.Fatal("self-signed certificate accepted without InsecureSkipVerify")
+		}
+		get(t, net.NewClient(net.Options{Transports: pool, InsecureSkipVerify: true}), srv.URL)
+	})
+	t.Run("cookie jar", func(t *testing.T) {
+		srv, _ := connCounter(t, false)
+		jar, _ := cookiejar.New(nil)
+		withJar := net.NewClient(net.Options{Jar: jar})
+		if res := get(t, withJar, srv.URL); res.Body != "" {
+			t.Fatalf("first request sent cookies %q", res.Body)
+		}
+		if res := get(t, withJar, srv.URL); res.Body != "seen=1" {
+			t.Fatalf("jar did not send the cookie: %q", res.Body)
+		}
+		noJar := net.NewClient(net.Options{})
+		get(t, noJar, srv.URL)
+		if res := get(t, noJar, srv.URL); res.Body != "" {
+			t.Fatalf("client without a jar sent %q", res.Body)
+		}
+	})
 }

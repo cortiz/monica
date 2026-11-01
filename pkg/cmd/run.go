@@ -28,6 +28,7 @@ var (
 	filters        []string
 	quiet          bool
 	dataPath       string
+	insecure       bool
 	run            = &cobra.Command{
 		Use:   "run",
 		Short: "Runs all mon files",
@@ -49,7 +50,7 @@ var (
 					return &exitError{code: ExitUsage, err: err}
 				}
 			}
-			opts := &runner.Opts{Env: env, Vars: vars, ConfigPath: configPath, Bail: bail, Filters: filters, Quiet: quiet}
+			opts := &runner.Opts{Env: env, Vars: vars, ConfigPath: configPath, Bail: bail, Filters: filters, Quiet: quiet, Insecure: insecure}
 			rep, closeOut, err := newReporter(reporterName, outPath, opts, cmd.OutOrStdout())
 			if err != nil {
 				return &exitError{code: ExitUsage, err: err}
@@ -83,6 +84,7 @@ func init() {
 	run.Flags().BoolVar(&bail, "bail", false, "stop at the first failed request")
 	run.Flags().StringArrayVar(&filters, "filter", nil, "only run requests whose @name, ### title or \"METHOD URL\" matches this glob (repeatable)")
 	run.Flags().BoolVarP(&quiet, "quiet", "q", false, "hide response headers and bodies")
+	run.Flags().BoolVarP(&insecure, "insecure", "k", false, "skip TLS certificate verification (like insecureSkipVerify in monica.yml)")
 	run.Flags().StringVar(&dataPath, "data", "", "run everything once per row of this CSV or JSON file, with the row's values as variables")
 }
 
