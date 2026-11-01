@@ -30,7 +30,7 @@ HTTP, like curl or Bruno), **tests them with JavaScript** (embedded, no Node.js)
 * **Docker** — `docker run --rm -v "$PWD:/work" ghcr.io/cortiz/monica run -r 3` (the image's
   entrypoint is `monica`; the current directory is mounted at `/work`, its working
   directory). Tags: `1.2.3`, `1.2` per release.
-* **From source** — clone the repository and run `make build` (Go 1.22+); the binary is
+* **From source** — clone the repository and run `make build` (Go 1.27+); the binary is
   `./monica`, versioned from `git describe`.
 
 `monica --version` prints the version; requests without a `User-Agent` header send
