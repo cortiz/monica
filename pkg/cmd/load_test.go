@@ -15,7 +15,8 @@ func runLoadCLI(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	loadSingle, loadRecursive, loadEnv, loadVarFlags, loadConfig, loadFilters = "", 1, "", nil, "", nil
 	loadVUs, loadDuration, loadIterations, loadGracefulStop, loadThresholds = 1, 0, 0, load.DefaultGracefulStop, nil
-	for _, name := range []string{"single", "recursive", "env", "var", "config", "filter", "vus", "duration", "iterations", "graceful-stop", "threshold"} {
+	loadRate, loadStages = "", nil
+	for _, name := range []string{"single", "recursive", "env", "var", "config", "filter", "vus", "duration", "iterations", "graceful-stop", "threshold", "rate", "stage"} {
 		if f := loadCmd.Flags().Lookup(name); f != nil {
 			f.Changed = false
 		}
@@ -103,6 +104,42 @@ func TestLoadCommand(t *testing.T) {
 		{
 			name: "invalid config threshold", config: "version: 1\nload:\n  thresholds: [\"p95\"]\n", mon: "GET " + srv.URL + "/a\n",
 			wantCode: ExitUsage, wantErr: "monica.yml: load.thresholds: invalid threshold",
+		},
+		{
+			name: "constant rate", mon: "GET " + srv.URL + "/a\n", args: []string{"--rate", "50/s", "--duration", "200ms"},
+			wantHits: -1, wantOut: []string{"monica load: 50.0 iterations/s, 200ms, up to 100 VUs ("},
+		},
+		{
+			name: "rate with iterations and a VU cap", mon: "GET " + srv.URL + "/a\n", args: []string{"--rate", "6000/m", "-i", "4", "-u", "2"},
+			wantHits: 4, wantOut: []string{"monica load: 100.0 iterations/s, 4 iterations, up to 2 VUs ("},
+		},
+		{
+			name: "ramping VUs from flags", mon: "GET " + srv.URL + "/a\n", args: []string{"--stage", "100ms:2", "--stage", "100ms:0"},
+			wantHits: -1, wantOut: []string{"monica load: ramping VUs 0 → 2 → 0 over 200ms\n"},
+		},
+		{
+			name: "stages and rate from config", config: "version: 1\nload:\n  rate: 10/s\n  vus: 3\n  stages:\n    - {duration: 200ms, target: 30}\n", mon: "GET " + srv.URL + "/a\n",
+			wantHits: -1, wantOut: []string{"monica load: ramping rate 10.0 → 30.0 iterations/s over 200ms, up to 3 VUs ("},
+		},
+		{
+			name: "--duration replaces config stages", config: "version: 1\nload:\n  stages: [{duration: 1h, target: 5}]\n", mon: "GET " + srv.URL + "/a\n",
+			args: []string{"--duration", "100ms"}, wantHits: -1, wantOut: []string{"monica load: 1 VU, 100ms\n"},
+		},
+		{
+			name: "--stage replaces config duration", config: "version: 1\nload:\n  duration: 1h\n", mon: "GET " + srv.URL + "/a\n",
+			args: []string{"--stage", "100ms:1"}, wantHits: -1, wantOut: []string{"ramping VUs 0 → 1 over 100ms"},
+		},
+		{
+			name: "stage and duration flags together", mon: "GET " + srv.URL + "/a\n", args: []string{"--stage", "1s:1", "--duration", "1s"},
+			wantCode: ExitUsage, wantErr: "set either a duration or stages",
+		},
+		{
+			name: "invalid rate", mon: "GET " + srv.URL + "/a\n", args: []string{"--rate", "fast"},
+			wantCode: ExitUsage, wantErr: `invalid rate "fast"`,
+		},
+		{
+			name: "invalid stage", mon: "GET " + srv.URL + "/a\n", args: []string{"--stage", "10"},
+			wantCode: ExitUsage, wantErr: `invalid stage "10"`,
 		},
 		{
 			name: "negative graceful stop", mon: "GET " + srv.URL + "/a\n", args: []string{"--graceful-stop", "-1s"},

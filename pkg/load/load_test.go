@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -219,7 +220,13 @@ func TestOptionsValidate(t *testing.T) {
 		{"no vus", Options{Iterations: 1, Files: files}, "vus must be at least 1"},
 		{"negative duration", Options{VUs: 1, Duration: -time.Second, Files: files}, "duration must not be negative"},
 		{"negative iterations", Options{VUs: 1, Iterations: -1, Files: files}, "iterations must not be negative"},
-		{"no limit", Options{VUs: 1, Files: files}, "set a duration or a number of iterations"},
+		{"no limit", Options{VUs: 1, Files: files}, "set a duration, stages or a number of iterations"},
+		{"negative rate", Options{VUs: 1, Rate: -1, Iterations: 1, Files: files}, "rate must be a positive number"},
+		{"rate without vus", Options{Rate: 5, Iterations: 1, Files: files}, "vus must be at least 1"},
+		{"stages and duration", Options{VUs: 1, Duration: time.Second, Stages: []Stage{{time.Second, 1}}, Files: files}, "set either a duration or stages"},
+		{"bad stage", Options{VUs: 1, Stages: []Stage{{time.Second, 1}, {0, 1}}, Files: files}, "stage 2: needs a positive duration"},
+		{"negative target", Options{VUs: 1, Stages: []Stage{{time.Second, -1}}, Files: files}, "stage 1"},
+		{"stages never reach a VU", Options{VUs: 0, Stages: []Stage{{time.Second, 0.5}}, Files: files}, "stages never reach 1 VU"},
 		{"no files", Options{VUs: 1, Iterations: 1}, "no .mon files"},
 	}
 	for _, tt := range tests {
@@ -241,19 +248,19 @@ func TestSummary(t *testing.T) {
 		{
 			name: "duration",
 			res:  Result{VUs: 10, Iterations: 1234, Interrupted: 2, Requests: 2468, Failed: 3, Duration: 30 * time.Second},
-			opts: Options{Duration: 30 * time.Second},
+			opts: Options{VUs: 10, Duration: 30 * time.Second},
 			want: "monica load: 10 VUs, 30s\niterations  1234 completed (41.1/s), 2 interrupted\nrequests    2468 (82.3/s), 3 failed (0.12%)\nduration    30s\n",
 		},
 		{
 			name: "iterations, one VU, no requests",
 			res:  Result{VUs: 1, Iterations: 1, Duration: 1234 * time.Millisecond},
-			opts: Options{Iterations: 1},
+			opts: Options{VUs: 1, Iterations: 1},
 			want: "monica load: 1 VU, 1 iteration\niterations  1 completed (0.8/s)\nrequests    0 (0.0/s), 0 failed\nduration    1.23s\n",
 		},
 		{
 			name: "both limits",
 			res:  Result{VUs: 2, Iterations: 5, Requests: 5, Duration: time.Second},
-			opts: Options{Duration: time.Minute, Iterations: 5},
+			opts: Options{VUs: 2, Duration: time.Minute, Iterations: 5},
 			want: "monica load: 2 VUs, 5 iterations, max 1m0s\niterations  5 completed (5.0/s)\nrequests    5 (5.0/s), 0 failed (0.00%)\nduration    1s\n",
 		},
 	}
@@ -288,5 +295,156 @@ func TestRunNoRequestsAborts(t *testing.T) {
 				t.Fatal("did not stop")
 			}
 		})
+	}
+}
+
+// concurrency counts how many requests a server handles at once.
+type concurrency struct {
+	*httptest.Server
+	now, peak atomic.Int64
+	hits      atomic.Int64
+}
+
+func newConcurrencyServer(t *testing.T, delay time.Duration) *concurrency {
+	t.Helper()
+	c := &concurrency{}
+	c.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c.hits.Add(1)
+		n := c.now.Add(1)
+		for {
+			p := c.peak.Load()
+			if n <= p || c.peak.CompareAndSwap(p, n) {
+				break
+			}
+		}
+		select {
+		case <-time.After(delay):
+		case <-r.Context().Done():
+		}
+		c.now.Add(-1)
+	}))
+	t.Cleanup(c.Close)
+	return c
+}
+
+func TestRunConstantRate(t *testing.T) {
+	t.Run("starts iterations on schedule", func(t *testing.T) {
+		srv := newConcurrencyServer(t, 0)
+		file := writeFile(t, t.TempDir(), "a.mon", "GET "+srv.URL+"/a\n")
+		res, err := Run(context.Background(), Options{VUs: 10, Rate: 40, Duration: 500 * time.Millisecond, GracefulStop: time.Second, Files: []string{file}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// 40/s for 0.5s: 20 iterations, at t = 0, 25ms, ... 475ms.
+		if res.Iterations < 18 || res.Iterations > 21 || res.Dropped != 0 || res.Interrupted != 0 {
+			t.Fatalf("result = %+v", res)
+		}
+		if res.VUs > 3 {
+			t.Fatalf("fast iterations should reuse VUs, started %d", res.VUs)
+		}
+	})
+	t.Run("drops iterations when every VU is busy", func(t *testing.T) {
+		srv := newConcurrencyServer(t, 300*time.Millisecond)
+		file := writeFile(t, t.TempDir(), "a.mon", "GET "+srv.URL+"/a\n")
+		res, err := Run(context.Background(), Options{VUs: 2, Rate: 50, Duration: 200 * time.Millisecond, GracefulStop: time.Second, Files: []string{file}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.VUs != 2 || res.Iterations != 2 || res.Dropped < 5 || srv.peak.Load() != 2 {
+			t.Fatalf("result = %+v, peak %d", res, srv.peak.Load())
+		}
+	})
+	t.Run("iterations cap", func(t *testing.T) {
+		srv := newConcurrencyServer(t, 0)
+		file := writeFile(t, t.TempDir(), "a.mon", "GET "+srv.URL+"/a\n")
+		start := time.Now()
+		res, err := Run(context.Background(), Options{VUs: 5, Rate: 100, Iterations: 5, Files: []string{file}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Iterations != 5 || srv.hits.Load() != 5 || time.Since(start) > time.Second {
+			t.Fatalf("result = %+v in %s", res, time.Since(start))
+		}
+	})
+	t.Run("ramping rate", func(t *testing.T) {
+		srv := newConcurrencyServer(t, 0)
+		file := writeFile(t, t.TempDir(), "a.mon", "GET "+srv.URL+"/a\n")
+		// 1 → 39/s over 0.5s: (1+39)/2 × 0.5 = 10 iterations.
+		res, err := Run(context.Background(), Options{VUs: 10, Rate: 1, Stages: []Stage{{500 * time.Millisecond, 39}}, GracefulStop: time.Second, Files: []string{file}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Iterations < 9 || res.Iterations > 11 || res.Dropped != 0 {
+			t.Fatalf("result = %+v", res)
+		}
+	})
+}
+
+func TestRunRampingVUs(t *testing.T) {
+	t.Run("ramps up and down", func(t *testing.T) {
+		srv := newConcurrencyServer(t, 20*time.Millisecond)
+		file := writeFile(t, t.TempDir(), "a.mon", "GET "+srv.URL+"/a\n")
+		start := time.Now()
+		res, err := Run(context.Background(), Options{VUs: 0, Stages: []Stage{{300 * time.Millisecond, 4}, {200 * time.Millisecond, 4}, {300 * time.Millisecond, 0}}, GracefulStop: time.Second, Files: []string{file}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if elapsed := time.Since(start); elapsed < 800*time.Millisecond || elapsed > 2*time.Second {
+			t.Fatalf("stages last 800ms, ran %s", elapsed)
+		}
+		if res.VUs != 4 || srv.peak.Load() != 4 || res.Interrupted != 0 || res.Iterations < 40 {
+			t.Fatalf("result = %+v, peak %d", res, srv.peak.Load())
+		}
+	})
+	t.Run("never starts VUs the ramp does not reach", func(t *testing.T) {
+		srv := newConcurrencyServer(t, 0)
+		file := writeFile(t, t.TempDir(), "a.mon", "GET "+srv.URL+"/a\n")
+		// 1 → 3 VUs over 200ms: VU 3 only at the very end, VU 2 halfway.
+		res, err := Run(context.Background(), Options{VUs: 1, Stages: []Stage{{200 * time.Millisecond, 2.9}}, Files: []string{file}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.VUs != 2 {
+			t.Fatalf("started %d VUs, want 2", res.VUs)
+		}
+	})
+	t.Run("iterations cap ends it early", func(t *testing.T) {
+		srv := newConcurrencyServer(t, 0)
+		file := writeFile(t, t.TempDir(), "a.mon", "GET "+srv.URL+"/a\n")
+		start := time.Now()
+		// VU 1 starts at 333ms; the 3 iterations end the test well before 1s.
+		res, err := Run(context.Background(), Options{VUs: 0, Stages: []Stage{{time.Second, 3}}, Iterations: 3, Files: []string{file}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Iterations != 3 || time.Since(start) > 900*time.Millisecond {
+			t.Fatalf("result = %+v in %s", res, time.Since(start))
+		}
+	})
+}
+
+func TestDescribe(t *testing.T) {
+	stages := []Stage{{30 * time.Second, 50}, {time.Minute, 0}}
+	tests := []struct {
+		opts    Options
+		started int
+		want    string
+	}{
+		{Options{VUs: 10, Duration: 30 * time.Second}, 10, "10 VUs, 30s"},
+		{Options{VUs: 1, Iterations: 1}, 1, "1 VU, 1 iteration"},
+		{Options{VUs: 2, Iterations: 5, Duration: time.Minute}, 2, "2 VUs, 5 iterations, max 1m0s"},
+		{Options{VUs: 0, Stages: stages}, 50, "ramping VUs 0 → 50 → 0 over 1m30s"},
+		{Options{VUs: 0, Stages: stages, Iterations: 100}, 50, "ramping VUs 0 → 50 → 0 over 1m30s, max 100 iterations"},
+		{Options{VUs: 50, Rate: 20, Duration: 30 * time.Second}, 12, "20.0 iterations/s, 30s, up to 50 VUs (12 used)"},
+		{Options{VUs: 1, Rate: 2.5, Stages: stages}, 1, "ramping rate 2.5 → 50.0 → 0.0 iterations/s over 1m30s, up to 1 VU (1 used)"},
+	}
+	for _, tt := range tests {
+		if got := describe(tt.opts, tt.started); got != tt.want {
+			t.Errorf("describe(%+v) = %q, want %q", tt.opts, got, tt.want)
+		}
+	}
+	res := Result{VUs: 2, Iterations: 3, Dropped: 7, Duration: time.Second}
+	if s := res.Summary(Options{VUs: 2, Rate: 10, Duration: time.Second}); !strings.Contains(s, "iterations  3 completed (3.0/s), 7 dropped (no free VU)\n") {
+		t.Fatalf("summary: %s", s)
 	}
 }

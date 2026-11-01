@@ -253,6 +253,9 @@ waiting / receiving; body bytes sent/received. Summary table on stdout (JSON in 
 replace the config list; invalid ones are usage errors (exit 2) before the test starts.
 
 **7.4 Executors** — `--rate 100/s` (constant arrival) and `stages:` ramp-up/down in `monica.yml`.
+✅ Done: four modes — fixed VUs, ramping VUs (`--stage`/`load.stages`), constant arrival
+rate (`--rate`/`load.rate`, VU pool up to `--vus`, dropped iterations counted) and ramping
+rate (stages + rate). Arrival times are computed exactly from the integral of the ramped rate.
 
 **7.5 Output** — live line (VUs, RPS, p95, errors) on TTY; final table; `--out json`.
 

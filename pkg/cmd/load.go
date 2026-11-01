@@ -29,6 +29,8 @@ var (
 	loadIterations   int
 	loadGracefulStop time.Duration
 	loadThresholds   []string
+	loadRate         string
+	loadStages       []string
 
 	loadCmd = &cobra.Command{
 		Use:   "load",
@@ -36,8 +38,10 @@ var (
 		Long: `Runs the same mon files as "monica run" with several virtual users (VUs) at
 once. Each VU loops over the files (one iteration = every file in run order)
 with its own script runtime and variables, until --duration has passed or
---iterations (shared by all VUs) have run. Defaults come from load: in
-monica.yml; without them, 1 VU runs 1 iteration.`,
+--iterations (shared by all VUs) have run. --stage ramps the VU count instead;
+--rate starts iterations at a fixed rate on up to --vus VUs (with --stage, the
+rate ramps). Defaults come from load: in monica.yml; without them, 1 VU runs
+1 iteration.`,
 		RunE: runLoad,
 	}
 )
@@ -50,10 +54,12 @@ func init() {
 	f.StringArrayVar(&loadVarFlags, "var", nil, "set a variable, name=value (repeatable; overrides monica.yml)")
 	f.StringVarP(&loadConfig, "config", "c", "", "config file to use instead of the nearest monica.yml")
 	f.StringArrayVar(&loadFilters, "filter", nil, "only run requests whose @name, ### title or \"METHOD URL\" matches this glob (repeatable)")
-	f.IntVarP(&loadVUs, "vus", "u", 1, "virtual users running at once (default load.vus, else 1)")
+	f.IntVarP(&loadVUs, "vus", "u", 1, "virtual users running at once; with --stage, the count to ramp from (default 0); with --rate, the most at once (default 100); else load.vus or 1")
 	f.DurationVar(&loadDuration, "duration", 0, "stop starting iterations after this long, e.g. 30s (default load.duration)")
 	f.IntVarP(&loadIterations, "iterations", "i", 0, "total iterations, shared by all VUs")
 	f.DurationVar(&loadGracefulStop, "graceful-stop", load.DefaultGracefulStop, "how long iterations running at the end of --duration may take before their requests are aborted")
+	f.StringVar(&loadRate, "rate", "", "start iterations at this rate instead of looping VUs, e.g. 100/s, 6000/m (default load.rate)")
+	f.StringArrayVar(&loadStages, "stage", nil, "ramp step duration:target, e.g. 30s:50; targets are VUs, or iterations/s with --rate (repeatable; replaces load.stages)")
 	f.StringArrayVar(&loadThresholds, "threshold", nil, "pass/fail condition such as \"p95<300ms\", \"login:errors<1%\" or \"rps>100\" (repeatable; replaces load.thresholds)")
 	rootCmd.AddCommand(loadCmd)
 }
@@ -143,13 +149,43 @@ func loadOptions(cmd *cobra.Command) (load.Options, []load.Threshold, error) {
 		return opts, nil, err
 	}
 	changed := cmd.Flags().Changed
-	if !changed("vus") && settings.VUs > 0 {
-		opts.VUs = settings.VUs
+	rateText := settings.Rate
+	if changed("rate") {
+		rateText = loadRate
 	}
-	if !changed("duration") && !changed("iterations") {
+	if rateText != "" {
+		if opts.Rate, err = config.ParseRate(rateText); err != nil {
+			return opts, nil, err
+		}
+	}
+	switch {
+	case changed("stage"):
+		for _, s := range loadStages {
+			st, err := config.ParseStage(s)
+			if err != nil {
+				return opts, nil, err
+			}
+			opts.Stages = append(opts.Stages, load.Stage{Duration: st.Duration.Duration, Target: st.Target})
+		}
+	case !changed("duration"): // --duration replaces load.stages
+		for _, st := range settings.Stages {
+			opts.Stages = append(opts.Stages, load.Stage{Duration: st.Duration.Duration, Target: st.Target})
+		}
+	}
+	if !changed("duration") && !changed("iterations") && len(opts.Stages) == 0 {
 		opts.Duration = settings.Duration.Duration
 	}
-	if opts.Duration == 0 && opts.Iterations == 0 {
+	if !changed("vus") {
+		switch {
+		case settings.VUs > 0:
+			opts.VUs = settings.VUs
+		case opts.Rate > 0:
+			opts.VUs = 100
+		case len(opts.Stages) > 0:
+			opts.VUs = 0
+		}
+	}
+	if opts.Duration == 0 && opts.Iterations == 0 && len(opts.Stages) == 0 {
 		opts.Iterations = 1
 	}
 	if opts.GracefulStop < 0 {
