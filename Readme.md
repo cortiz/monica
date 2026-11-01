@@ -277,7 +277,8 @@ Parse errors are reported as `file:line: message`.
 
 ### Validate without sending (`monica validate`)
 `monica validate` checks the files `monica run` would run, with the same selection flags
-(`-s`, `-r`, `-e`, `--var`, `-c`, `--filter`, `--data`), but sends nothing and runs no script.
+(`-s`, `-r`, `-e`, `--var`, `-c`, `--filter`, `--data`, and `--cert`, `--key`, `--cacert`,
+`--proxy`), but sends nothing and runs no script.
 Use it in CI or a pre-commit hook.
 
 ```bash
@@ -288,6 +289,8 @@ monica validate -s api.mon -e staging
 It reports:
 * `.mon` syntax errors, including missing body (`< ./file`) and script (`> ./tests.js`) files;
 * an invalid `monica.yml` (or `monica.local.yml`, `.env`) and an unknown `--env`;
+* TLS certificate files that can't be read or parsed and invalid proxy URLs, from `tls:` /
+  `proxy:` and the flags (the files are read; nothing is dialed);
 * JavaScript/TypeScript syntax errors in inline `{% %}` blocks, script files and the
   `monica.js` hooks that apply (compiled, not run);
 * `{{variables}}` that nothing defines, in URLs, headers, bodies and default headers;

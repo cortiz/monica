@@ -21,6 +21,7 @@ var (
 	valConfig    string
 	valFilters   []string
 	valData      string
+	valTLS       tlsFlags
 
 	validateCmd = &cobra.Command{
 		Use:   "validate",
@@ -28,7 +29,9 @@ var (
 		Long: `Checks the mon files "monica run" would run (same file selection flags)
 without sending a request or running a script: .mon syntax, missing body and
 script files, monica.yml and the selected environment, JavaScript/TypeScript
-syntax (inline blocks, script files and monica.js hooks), and {{variables}}
+syntax (inline blocks, script files and monica.js hooks), TLS certificate
+files and proxy URLs (tls:, proxy: and the --cert/--key/--cacert/--proxy
+flags; files are read, nothing is dialed), and {{variables}}
 that nothing defines. A variable counts as defined when monica.yml, --var or a
 --data column has it, or when any script of the run calls vars.set("name", ...)
 with that literal name. ${NAME} secrets missing from the environment and .env
@@ -50,6 +53,7 @@ func init() {
 	f.StringVarP(&valConfig, "config", "c", "", "config file to use instead of the nearest monica.yml")
 	f.StringArrayVar(&valFilters, "filter", nil, "only check requests whose @name, ### title or \"METHOD URL\" matches this glob (repeatable)")
 	f.StringVar(&valData, "data", "", "CSV or JSON data file whose columns count as defined variables")
+	valTLS.register(validateCmd)
 }
 
 func runValidate(cmd *cobra.Command, _ []string) error {
@@ -74,7 +78,8 @@ func runValidate(cmd *cobra.Command, _ []string) error {
 	if valData != "" {
 		rows, dataErr = runner.LoadData(valData)
 	}
-	opts := &runner.Opts{Env: env, Vars: vars, ConfigPath: valConfig, Filters: valFilters}
+	opts := &runner.Opts{Env: env, Vars: vars, ConfigPath: valConfig, Filters: valFilters,
+		ClientCert: valTLS.cert, ClientKey: valTLS.key, CACert: valTLS.caCert, Proxy: valTLS.proxy}
 	res := runner.Validate(files, opts, rows)
 	if dataErr != nil {
 		res.Problems = append([]runner.Problem{{Severity: runner.SeverityError, Msg: dataErr.Error()}}, res.Problems...)

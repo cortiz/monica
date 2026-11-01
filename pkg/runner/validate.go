@@ -90,12 +90,14 @@ type validator struct {
 	data     map[string]bool      // --data columns
 	scanned  map[string]bool      // script files already scanned or compiled
 	reported map[string]bool      // problem lines already reported
+	badFlags bool                 // --cert/--key/--cacert/--proxy failed CheckTransport
 }
 
 // Validate checks files the way RunFile would run them (see Opts: Env,
 // Vars, ConfigPath, Filters, LookupEnv), without sending anything or
 // running any script. It reports .mon syntax errors (including missing
 // body and script files), monica.yml errors and unknown environments,
+// unreadable TLS files and invalid proxies (config and Opts flags),
 // script syntax errors (inline blocks, script files and the monica.js
 // hooks that apply) and {{variables}} that can't be resolved. ${NAME}
 // references missing from the environment and .env are warnings.
@@ -116,6 +118,10 @@ func Validate(files []string, opts *Opts, rows []Row) *Validation {
 		data:     map[string]bool{},
 		scanned:  map[string]bool{},
 		reported: map[string]bool{},
+	}
+	if err := opts.CheckTransport(); err != nil {
+		v.add(Problem{Severity: SeverityError, Msg: err.Error()})
+		v.badFlags = true
 	}
 	for _, row := range rows {
 		for name := range row {
@@ -229,6 +235,7 @@ func (v *validator) project(file string) *vproject {
 			v.add(Problem{File: file, Severity: SeverityWarning, Msg: fmt.Sprintf("no %s found; ignoring environment %q", config.FileName, v.opts.Env)})
 		}
 		vp.p = &project{settings: config.Builtin()}
+		v.checkTransport("", vp.p.settings)
 		return vp
 	}
 	cfg, err := config.Load(path)
@@ -262,8 +269,26 @@ func (v *validator) project(file string) *vproject {
 			Msg: fmt.Sprintf("${%s} is not set (in the environment or %s)", name, config.DotEnvFileName)})
 	}
 	vp.p = &project{settings: settings, root: filepath.Dir(path), scriptPaths: cfg.Scripts.Paths}
+	v.checkTransport(path, settings)
 	v.scanModules(vp.p)
 	return vp
+}
+
+// checkTransport reads the project's TLS files and parses its proxy, with
+// the --cert/--key/--cacert/--proxy flags applied over them, without
+// building a transport or dialing. Bad flags are reported once, by
+// Validate, not again for every project.
+func (v *validator) checkTransport(path string, s *config.Resolved) {
+	if v.badFlags {
+		return
+	}
+	tc, err := v.opts.transportConfig(s)
+	if err == nil {
+		err = tc.Check()
+	}
+	if err != nil {
+		v.configProblem(path, err)
+	}
 }
 
 // lineOf is the 1-based line of the first occurrence of text in file, or 0.
