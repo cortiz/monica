@@ -51,6 +51,10 @@ type Options struct {
 	// Run is the runner configuration each VU starts from; Context,
 	// NoSummary and VU are set per VU.
 	Run runner.Opts
+	// Progress, when set, is called every ProgressInterval (default 1s)
+	// while the test runs, from its own goroutine.
+	Progress         func(Progress)
+	ProgressInterval time.Duration
 }
 
 // Result summarizes a load test.
@@ -149,6 +153,15 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 
 	start := time.Now()
+	if opts.Progress != nil {
+		done := make(chan struct{})
+		stopped := make(chan struct{})
+		go func() {
+			defer close(stopped)
+			t.reportProgress(start, duration, done)
+		}()
+		defer func() { close(done); <-stopped }()
+	}
 	switch {
 	case opts.Rate > 0:
 		t.runRate(start)
@@ -187,8 +200,9 @@ type test struct {
 	inputErr   error // set once, before hard is cancelled
 	wg         sync.WaitGroup
 
-	mu  sync.Mutex
-	vus []*vu // every VU started; read after wg.Wait
+	mu   sync.Mutex
+	vus  []*vu // every VU started
+	live live  // for Progress
 
 	claimed                          atomic.Int64 // iterations started (with Iterations)
 	iterations, interrupted, dropped atomic.Int64
@@ -372,6 +386,8 @@ func (v *vu) close() {
 // (aborted or failed with an input error).
 func (v *vu) iterate() bool {
 	t := v.t
+	t.live.active.Add(1)
+	defer t.live.active.Add(-1)
 	v.n++
 	v.r.SetIteration(v.n, nil)
 	v.sk.ran = false
@@ -444,6 +460,7 @@ func (s *sink) Request(r report.Request) {
 		return // aborted by the stop, not a failure of the system under test
 	}
 	s.m.record(r)
+	s.t.live.record(r)
 }
 
 func (s *sink) Done(report.Summary) error { return nil }

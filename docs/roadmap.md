@@ -258,6 +258,9 @@ rate (`--rate`/`load.rate`, VU pool up to `--vus`, dropped iterations counted) a
 rate (stages + rate). Arrival times are computed exactly from the integral of the ramped rate.
 
 **7.5 Output** — live line (VUs, RPS, p95, errors) on TTY; final table; `--out json`.
+✅ Done: progress line on stderr every second when it is a terminal (`-q` off), rps/p95
+over the last second from a small shared interval histogram; `-o/--out file.json` (or `-`
+for stdout) with config, totals, per-request latency/phases and thresholds.
 
 **7.6 Tuning** — shared `Transport` with `MaxIdleConnsPerHost`, keep-alive toggle,
 `--insecure`, per-VU cookie jar.

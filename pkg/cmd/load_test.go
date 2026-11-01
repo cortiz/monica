@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -15,8 +18,8 @@ func runLoadCLI(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	loadSingle, loadRecursive, loadEnv, loadVarFlags, loadConfig, loadFilters = "", 1, "", nil, "", nil
 	loadVUs, loadDuration, loadIterations, loadGracefulStop, loadThresholds = 1, 0, 0, load.DefaultGracefulStop, nil
-	loadRate, loadStages = "", nil
-	for _, name := range []string{"single", "recursive", "env", "var", "config", "filter", "vus", "duration", "iterations", "graceful-stop", "threshold", "rate", "stage"} {
+	loadRate, loadStages, loadOut, loadQuiet = "", nil, "", false
+	for _, name := range []string{"single", "recursive", "env", "var", "config", "filter", "vus", "duration", "iterations", "graceful-stop", "threshold", "rate", "stage", "out", "quiet"} {
 		if f := loadCmd.Flags().Lookup(name); f != nil {
 			f.Changed = false
 		}
@@ -176,4 +179,66 @@ func TestLoadCommand(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLoadOut(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+	dir := t.TempDir()
+	writeMon(t, dir, "api.mon", "# @name ping\nGET "+srv.URL+"/a\n")
+	chdir(t, dir)
+
+	t.Run("file, text summary still on stdout", func(t *testing.T) {
+		out := filepath.Join(dir, "report.json")
+		code, stdout, stderr := runLoadCLI(t, "-i", "3", "--out", out, "--threshold", "p95<1m")
+		if code != ExitOK {
+			t.Fatalf("exit %d: %s", code, stderr)
+		}
+		if !strings.Contains(stdout, "monica load: 1 VU, 3 iterations") {
+			t.Fatalf("stdout: %s", stdout)
+		}
+		data, err := os.ReadFile(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc struct {
+			Iterations int  `json:"iterations"`
+			Passed     bool `json:"passed"`
+			Aborted    bool `json:"aborted"`
+			Requests   []struct {
+				Name     string `json:"name"`
+				Requests int    `json:"requests"`
+			} `json:"requests"`
+		}
+		if err := json.Unmarshal(data, &doc); err != nil {
+			t.Fatalf("%v: %s", err, data)
+		}
+		if doc.Iterations != 3 || !doc.Passed || doc.Aborted || len(doc.Requests) != 1 || doc.Requests[0].Name != "ping" || doc.Requests[0].Requests != 3 {
+			t.Fatalf("report = %+v", doc)
+		}
+	})
+	t.Run("stdout replaces the text summary", func(t *testing.T) {
+		code, stdout, stderr := runLoadCLI(t, "-i", "2", "--out", "-", "--threshold", "rps>1000000")
+		if code != ExitFailed || !strings.Contains(stderr, "1 of 1 thresholds failed") {
+			t.Fatalf("exit %d: %s", code, stderr)
+		}
+		var doc struct {
+			Passed bool `json:"passed"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &doc); err != nil || doc.Passed {
+			t.Fatalf("stdout is not just the JSON report (%v): %s", err, stdout)
+		}
+	})
+	t.Run("unwritable file fails before the test", func(t *testing.T) {
+		code, _, stderr := runLoadCLI(t, "-i", "1", "--out", filepath.Join(dir, "missing", "r.json"))
+		if code != ExitUsage || !strings.Contains(stderr, "creating report file") {
+			t.Fatalf("exit %d: %s", code, stderr)
+		}
+	})
+	t.Run("no progress line when stderr is not a terminal", func(t *testing.T) {
+		_, _, stderr := runLoadCLI(t, "--duration", "1500ms")
+		if strings.Contains(stderr, "running ") || strings.Contains(stderr, "\x1b[2K") {
+			t.Fatalf("progress written to a non-terminal: %q", stderr)
+		}
+	})
 }

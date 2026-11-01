@@ -31,6 +31,8 @@ var (
 	loadThresholds   []string
 	loadRate         string
 	loadStages       []string
+	loadOut          string
+	loadQuiet        bool
 
 	loadCmd = &cobra.Command{
 		Use:   "load",
@@ -60,6 +62,8 @@ func init() {
 	f.DurationVar(&loadGracefulStop, "graceful-stop", load.DefaultGracefulStop, "how long iterations running at the end of --duration may take before their requests are aborted")
 	f.StringVar(&loadRate, "rate", "", "start iterations at this rate instead of looping VUs, e.g. 100/s, 6000/m (default load.rate)")
 	f.StringArrayVar(&loadStages, "stage", nil, "ramp step duration:target, e.g. 30s:50; targets are VUs, or iterations/s with --rate (repeatable; replaces load.stages)")
+	f.StringVarP(&loadOut, "out", "o", "", "also write a JSON report to this file; \"-\" prints it on stdout instead of the text summary")
+	f.BoolVarP(&loadQuiet, "quiet", "q", false, "no live progress line (it is only shown when stderr is a terminal)")
 	f.StringArrayVar(&loadThresholds, "threshold", nil, "pass/fail condition such as \"p95<300ms\", \"login:errors<1%\" or \"rps>100\" (repeatable; replaces load.thresholds)")
 	rootCmd.AddCommand(loadCmd)
 }
@@ -91,14 +95,31 @@ func runLoad(cmd *cobra.Command, _ []string) error {
 		opts.Files = runner.New(&ropts, io.Discard).Order(files)
 	}
 
+	// Open the report file first: a bad path should fail before the test.
+	var outFile *os.File
+	if loadOut != "" && loadOut != "-" {
+		if outFile, err = os.Create(loadOut); err != nil {
+			return &exitError{code: ExitUsage, err: fmt.Errorf("creating report file: %w", err)}
+		}
+		defer func() { _ = outFile.Close() }() // on early returns; closed and checked below otherwise
+	}
+
 	// Per-request logs would drown the summary: only warnings and errors
 	// unless --debug.
 	if !debug {
 		zerolog.SetGlobalLevel(zerolog.WarnLevel)
 	}
+	stderr := cmd.ErrOrStderr()
+	showProgress := !loadQuiet && isTerminal(stderr)
+	if showProgress {
+		opts.Progress = func(p load.Progress) { _, _ = fmt.Fprint(stderr, clearLine+p.String()) }
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	res, err := load.Run(ctx, opts)
+	if showProgress {
+		_, _ = fmt.Fprint(stderr, clearLine)
+	}
 	var ie *runner.InputError
 	switch {
 	case errors.As(err, &ie):
@@ -107,7 +128,26 @@ func runLoad(cmd *cobra.Command, _ []string) error {
 		return &exitError{code: ExitUsage, err: err}
 	}
 	checked := load.Check(res, thresholds)
-	_, _ = fmt.Fprint(cmd.OutOrStdout(), res.Summary(opts)+load.ThresholdReport(checked))
+	if loadOut != "" {
+		data, jerr := res.JSON(opts, checked, err != nil)
+		if jerr == nil {
+			data = append(data, '\n')
+			if outFile != nil {
+				_, jerr = outFile.Write(data)
+				if cerr := outFile.Close(); jerr == nil {
+					jerr = cerr
+				}
+			} else {
+				_, jerr = cmd.OutOrStdout().Write(data)
+			}
+		}
+		if jerr != nil {
+			return &exitError{code: ExitFailed, err: fmt.Errorf("writing report: %w", jerr)}
+		}
+	}
+	if loadOut != "-" {
+		_, _ = fmt.Fprint(cmd.OutOrStdout(), res.Summary(opts)+load.ThresholdReport(checked))
+	}
 	if err != nil {
 		return &exitError{code: ExitFailed, err: errors.New("load test interrupted")}
 	}
@@ -115,6 +155,19 @@ func runLoad(cmd *cobra.Command, _ []string) error {
 		return &exitError{code: ExitFailed, err: fmt.Errorf("%d of %d thresholds failed", n, len(checked))}
 	}
 	return nil
+}
+
+// clearLine returns the cursor to the start of the line and clears it.
+const clearLine = "\r\x1b[2K"
+
+// isTerminal reports whether w is a terminal (a character device).
+func isTerminal(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := f.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
 // loadOptions combines the flags with load: from monica.yml (--config or
