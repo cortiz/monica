@@ -55,16 +55,17 @@ HTTP, like curl or Bruno), **tests them with JavaScript** (embedded, no Node.js)
 	```
 	The `.mon` text goes to stdout, or to `-o, --out <file>` (an existing file is kept unless
 	`-f, --force`); `--name <name>` sets `@name`. Quoting follows the shell: `'...'`, `"..."`,
-	`$'...'`, backslash escapes, and `\` / `^` line continuations (bash and Windows `cmd`
-	copies). Converted options:
+	`$'...'`, backslash escapes and `\` line continuations (bash copies); a command with `^`
+	line continuations or `^"` quotes is read as Windows `cmd` would (`^` escapes, `"..."`,
+	`\"`), as in Chrome's "Copy as cURL (cmd)". Converted options:
 
 	| curl | `.mon` |
 	|------|--------|
 	| `-X`, `--request` | method (otherwise `HEAD` with `-I`, `PUT` with `-T`, `POST` with data, else `GET`) |
 	| `-H`, `--header` | header (`Name;` sends an empty value; `Name:` is ignored) |
-	| `-d`, `--data`, `--data-ascii` | body, line breaks removed; several are joined with `&`; adds `Content-Type: application/x-www-form-urlencoded` unless set |
+	| `-d`, `--data`, `--data-ascii` | body; several are joined with `&`; adds `Content-Type: application/x-www-form-urlencoded` unless set |
 	| `--data-raw`, `--data-binary`, `--data-urlencode` | body as is / URL-encoded (`name=value` encodes the value) |
-	| `-d @file`, `--data-binary @file`, `-T file` | `< file` body (paths relative to the `.mon` file) |
+	| `-d @file`, `--data-binary @file`, `-T file` | `< file` body; with `--out`, relative paths are rewritten to be relative to the `.mon` file's folder (curl reads them from the current directory) |
 	| `--json` | body plus `Content-Type` and `Accept: application/json` |
 	| `-G`, `--get`, `--url-query` | data appended to the URL query |
 	| `-u user:pass`, `--oauth2-bearer` | `Authorization: Basic …` / `Bearer …` header |
@@ -77,7 +78,9 @@ HTTP, like curl or Bruno), **tests them with JavaScript** (embedded, no Node.js)
 	(`-s`, `-v`, `-L`, `--compressed`, `-o`, …) are dropped; others (`-k`, `--proxy`, cookie
 	files, unknown options) are dropped with a warning on stderr, as are shell variables
 	(`$TOKEN`, kept as text) and anything after an unquoted `|`, `;`, `&`, `<` or `>`.
-	`-H @file` and data from stdin are errors. Text such as `{{x}}` is kept and
+	`-H @file`, data from stdin, and what a `.mon` file can't hold as written (an `-F` value
+	with a line break or one that starts with `< `, a body line starting with `###` or `> {%`,
+	a body ending in blank lines before another URL's request) are errors. Text such as `{{x}}` is kept and
 	warned about, since monica reads it as a variable.
 
 * Runs all `mon` files in the current directory

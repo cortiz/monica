@@ -1,0 +1,5 @@
+curl "https://api.example.com/v1/orders?q=a%%20b" ^
+  -H ^"accept: application/json^" ^
+  -H ^"content-type: application/json^" ^
+  -b ^"sid=1; theme=dark^" ^
+  --data-raw ^"{^\^"note^\^":^\^"50^% ^& more^\^",^\^"path^\^":^\^"C:^\^\x^\^"}^"
