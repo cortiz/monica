@@ -93,6 +93,10 @@ homebrew_casks:
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
+release:
+  # Tags such as v1.0.0-rc.1 are published as pre-releases (not "Latest").
+  prerelease: auto
+
 changelog:
   sort: asc
   filters:
