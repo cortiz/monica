@@ -248,10 +248,10 @@ func ParseProxy(s string) (string, error) {
 	switch u.Scheme {
 	case "http", "https", "socks5", "socks5h":
 	default:
-		return "", fmt.Errorf("invalid proxy URL %q (%s)", u.Redacted(), proxyHint)
+		return "", fmt.Errorf("invalid proxy URL %q (%s)", redactUser(u), proxyHint)
 	}
 	if u.Hostname() == "" {
-		return "", fmt.Errorf("invalid proxy URL %q: missing host", u.Redacted())
+		return "", fmt.Errorf("invalid proxy URL %q: missing host", redactUser(u))
 	}
 	return s, nil
 }
@@ -263,11 +263,44 @@ func ProxySecrets(proxy string) []string {
 	if err != nil || u.User == nil {
 		return nil
 	}
-	pass, ok := u.User.Password()
-	if !ok || pass == "" {
+	// A token is often passed as the user name alone (http://TOKEN@host):
+	// without a password, the user name is the secret. With one, the name
+	// is usually not secret (and masking a common word would hide it all
+	// over the output), so only the password and the whole user info are.
+	var out []string
+	if pass, ok := u.User.Password(); ok && pass != "" {
+		out = append(out, pass, url.QueryEscape(pass))
+	} else if name := u.User.Username(); name != "" {
+		out = append(out, name, url.QueryEscape(name))
+	}
+	if len(out) == 0 {
 		return nil
 	}
-	return []string{pass, url.QueryEscape(pass), u.User.String()}
+	return append(out, u.User.String())
+}
+
+// RedactProxy returns proxy with its whole user info (name and password)
+// replaced by xxxxx, for messages and logs.
+func RedactProxy(proxy string) string {
+	u, err := url.Parse(proxy)
+	if err != nil || u.User == nil {
+		return proxy
+	}
+	return redactUser(u)
+}
+
+// redactUser formats u with its user info hidden.
+func redactUser(u *url.URL) string {
+	if u.User == nil {
+		return u.String()
+	}
+	c := *u
+	c.User = nil
+	s := c.String()
+	if i := strings.Index(s, "//"); i >= 0 {
+		s = s[:i+2] + "xxxxx@" + s[i+2:]
+	}
+	return s
 }
 
 // Find walks up from dir looking for monica.yml and returns its path, or ""

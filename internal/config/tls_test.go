@@ -82,13 +82,27 @@ func TestResolveWithoutTLSOrProxy(t *testing.T) {
 	}
 }
 
+func TestRedactProxy(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"http://proxy:3128", "http://proxy:3128"},
+		{"http://TOKEN@proxy:3128", "http://xxxxx@proxy:3128"},
+		{"http://user:pass@proxy:3128", "http://xxxxx@proxy:3128"},
+		{ProxyNone, ProxyNone},
+	}
+	for _, tt := range tests {
+		if got := RedactProxy(tt.in); got != tt.want {
+			t.Errorf("RedactProxy(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
 func TestProxySecrets(t *testing.T) {
 	tests := []struct {
 		proxy string
 		want  []string
 	}{
 		{"http://proxy:3128", nil},
-		{"http://user@proxy:3128", nil},
+		{"http://tok%2Fen@proxy:3128", []string{"tok/en", "tok%2Fen", "tok%2Fen"}},
 		{"http://user:p%40ss@proxy:3128", []string{"p@ss", "p%40ss", "user:p%40ss"}},
 		{ProxyNone, nil},
 	}

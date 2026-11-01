@@ -82,7 +82,7 @@ func TestLoadErrors(t *testing.T) {
 		{"client cert without key", "version: 1\ndefaults:\n  tls:\n    clientCert: client.pem\n", "defaults.tls: clientCert \"client.pem\" is set without clientKey"},
 		{"client key without cert", "version: 1\nenvs:\n  dev:\n    tls: {clientKey: k.pem}\n", "envs.dev.tls: clientKey \"k.pem\" is set without clientCert"},
 		{"unknown tls key", "version: 1\ndefaults:\n  tls:\n    cert: c.pem\n", "line 4: field cert not found"},
-		{"proxy with a bad scheme", "version: 1\ndefaults:\n  proxy: ftp://u:hunter2@proxy:21\n", "defaults.proxy: invalid proxy URL \"ftp://u:xxxxx@proxy:21\""},
+		{"proxy with a bad scheme", "version: 1\ndefaults:\n  proxy: ftp://u:hunter2@proxy:21\n", "defaults.proxy: invalid proxy URL \"ftp://xxxxx@proxy:21\""},
 		{"proxy without host", "version: 1\nenvs:\n  dev:\n    proxy: http://\n", "envs.dev.proxy: invalid proxy URL \"http:\": missing host"},
 		{"proxy that is not a URL", "version: 1\ndefaults:\n  proxy: proxy.local:3128\n", "defaults.proxy: invalid proxy URL"},
 	}

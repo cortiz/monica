@@ -192,7 +192,7 @@ func TestClientTLSErrors(t *testing.T) {
 		{"cert is not the key's", net.Options{ClientCert: p.caFile, ClientKey: p.clientKey}, "loading client certificate " + p.caFile},
 		{"missing CA file", net.Options{CACert: missing}, missing},
 		{"CA file without certificates", net.Options{CACert: p.clientKey}, "CA certificate " + p.clientKey + ": no PEM certificates found"},
-		{"bad proxy scheme", net.Options{Proxy: "ftp://u:hunter2@proxy:21"}, `invalid proxy URL "ftp://u:xxxxx@proxy:21"`},
+		{"bad proxy scheme", net.Options{Proxy: "ftp://u:hunter2@proxy:21"}, `invalid proxy URL "ftp://xxxxx@proxy:21"`},
 		{"proxy without host", net.Options{Proxy: "http://"}, "missing host"},
 	}
 	for _, tt := range tests {

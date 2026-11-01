@@ -127,7 +127,7 @@ func TestCheckTransport(t *testing.T) {
 		{"key without cert", runner.Opts{ClientKey: "k.pem"}, "--key k.pem needs --cert"},
 		{"missing files", runner.Opts{ClientCert: "nope.pem", ClientKey: "nope-key.pem"}, "loading client certificate nope.pem"},
 		{"missing CA", runner.Opts{CACert: "nope-ca.pem"}, "nope-ca.pem"},
-		{"bad proxy", runner.Opts{Proxy: "ftp://me:hunter2@x"}, `--proxy: invalid proxy URL "ftp://me:xxxxx@x"`},
+		{"bad proxy", runner.Opts{Proxy: "ftp://me:hunter2@x"}, `--proxy: invalid proxy URL "ftp://xxxxx@x"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

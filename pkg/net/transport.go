@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -182,10 +183,25 @@ func ParseProxy(s string) (*url.URL, error) {
 	switch u.Scheme {
 	case "http", "https", "socks5", "socks5h":
 	default:
-		return nil, fmt.Errorf("invalid proxy URL %q (expected http://, https:// or socks5:// with a host, or %q)", u.Redacted(), ProxyNone)
+		return nil, fmt.Errorf("invalid proxy URL %q (expected http://, https:// or socks5:// with a host, or %q)", redactUser(u), ProxyNone)
 	}
 	if u.Host == "" {
-		return nil, fmt.Errorf("invalid proxy URL %q: missing host", u.Redacted())
+		return nil, fmt.Errorf("invalid proxy URL %q: missing host", redactUser(u))
 	}
 	return u, nil
+}
+
+// redactUser formats u with its whole user info (name and password)
+// hidden: a proxy token is often the user name alone.
+func redactUser(u *url.URL) string {
+	if u.User == nil {
+		return u.String()
+	}
+	c := *u
+	c.User = nil
+	s := c.String()
+	if i := strings.Index(s, "//"); i >= 0 {
+		s = s[:i+2] + "xxxxx@" + s[i+2:]
+	}
+	return s
 }
