@@ -6,6 +6,8 @@ GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
 BINARY_NAME=monica
 GOINST = $(GOCMD) install
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS = -X jmpeax.com/sec/monica/internal/version.Version=$(VERSION)
 
 # Default target executed when `make` is called without arguments.
 .PHONY: all
@@ -19,7 +21,7 @@ build-deps:
 # Builds the project.
 .PHONY: build
 build: generate
-	$(GOBUILD) -o $(BINARY_NAME) -v
+	$(GOBUILD) -ldflags "$(LDFLAGS)" -o $(BINARY_NAME) -v
 
 # Runs the project.
 .PHONY: run
@@ -62,6 +64,16 @@ lint:
 release: build-deps pr lint
 	goreleaser release --clean
 
+# Builds every release archive locally into dist/ without publishing.
+.PHONY: snapshot
+snapshot: build-deps
+	goreleaser release --snapshot --clean
+
+# Builds the Docker image (tag monica:$(VERSION)).
+.PHONY: docker
+docker:
+	docker build -f other/Dockerfile --build-arg VERSION=$(VERSION) -t $(BINARY_NAME):$(VERSION) .
+
 .PHONY: pr
 pr: generate test fmt-check
 	@echo "All checks passed"
@@ -85,3 +97,5 @@ help:
 	@echo "  pr          - PR gate: generate + test + fmt-check."
 	@echo "  build-deps  - Installs the tools needed to release."
 	@echo "  release     - Creates a release with goreleaser."
+	@echo "  snapshot    - Builds the release archives into dist/ without publishing."
+	@echo "  docker      - Builds the Docker image monica:VERSION."

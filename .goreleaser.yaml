@@ -1,21 +1,25 @@
-# This is an example .goreleaser.yml file with some sensible defaults.
-# Make sure to check the documentation at https://goreleaser.com
-
-# The lines below are called `modelines`. See `:help modeline`
-# Feel free to remove those if you don't want/need to use them.
+# Release config: `goreleaser release --clean` (CI runs it on every pushed tag,
+# see .github/workflows/release.yml). Check it locally with
+# `goreleaser check` and `goreleaser release --snapshot --clean`.
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
-# vim: set ts=2 sw=2 tw=0 fo=cnqoj
-
 version: 2
 project_name: monica
+
 before:
   hooks:
-    # You may remove this if you don't use go modules.
     - go mod tidy
-    # you may remove this if you don't need go generate
+    - go generate ./...
+
 builds:
-  - env:
+  - id: monica
+    main: .
+    binary: monica
+    env:
       - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X jmpeax.com/sec/monica/internal/version.Version={{ .Version }}
     goos:
       - linux
       - windows
@@ -26,10 +30,17 @@ builds:
       - arm
       - arm64
       - riscv64
+    ignore:
+      - goos: windows
+        goarch: arm
+      - goos: windows
+        goarch: riscv64
+      - goos: darwin
+        goarch: riscv64
 
 archives:
-  - format: tar.gz
-    # this name template makes the OS and Arch compatible with the results of `uname`.
+  - formats: [tar.gz]
+    # OS and arch names compatible with `uname`.
     name_template: >-
       {{ .ProjectName }}_
       {{- title .Os }}_
@@ -37,10 +48,19 @@ archives:
       {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
-    # use zip for windows archives
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
+    files:
+      - Readme.md
+      - LICENSE.md
+      - examples/**/*
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
 
 changelog:
   sort: asc

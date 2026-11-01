@@ -269,7 +269,7 @@ VUs), `--no-keepalive`, `-k/--insecure` (also on `monica run`), a cookie jar per
 
 ---
 
-## Phase 8 — Polish & distribution
+## Phase 8 — Polish & distribution ✅ done
 
 - 8.1 `monica init` — scaffold `monica.yml`, example `.mon`, `.gitignore` entries.
   ✅ Done: `monica init [dir]` (`pkg/scaffold`, embedded templates) writes `monica.yml`
@@ -293,6 +293,13 @@ VUs), `--no-keepalive`, `-k/--insecure` (also on `monica run`), a cookie jar per
   reference (contents line, features list refreshed). A hosted docs site was not set up (no
   generator dependency); the Markdown renders on GitHub.
 - 8.5 Release: goreleaser + Docker image updated with new commands.
+  ✅ Done: `internal/version` (set by `-ldflags -X …Version=`, else the module version,
+  else `dev`) drives `monica --version` and the default `User-Agent`. goreleaser: ldflags,
+  `-trimpath`, `go generate` hook, `formats`, checksums, archives ship the Readme and
+  `examples/`, unsupported windows/darwin targets ignored. Dockerfile: static build with
+  the version as a build arg, pinned Alpine with CA certificates, non-root user,
+  `ENTRYPOINT ["monica"]`, `WORKDIR /work`; `.dockerignore`. The Docker workflow now runs on
+  `v*` tags (it was watching branches) with semver image tags; `make snapshot` / `make docker`.
 
 ---
 
@@ -358,7 +365,7 @@ Postman and Bruno import need no new dependencies (stdlib JSON + hand-written `.
 
 ## Suggested order
 
-`0.x → 1.x → 2.x → 3.x → 4.x → 5.x` (done) `→ 6.x → 7.x → 8.x`
+`0.x → 1.x → 2.x → 3.x → 4.x → 5.x → 6.x → 7.x → 8.x` (done); next: Phase 9 tracks.
 
 1.3 landed before Phase 2 as parse-only; revisit the script syntax in 3.x if the engine
 needs changes (e.g. `%}` inside code).

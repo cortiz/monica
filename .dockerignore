@@ -1,0 +1,10 @@
+.git
+.github
+.claude
+.idea
+dist/
+monica
+*.out
+.env
+.env.*
+monica.local.yml

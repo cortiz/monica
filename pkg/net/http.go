@@ -11,15 +11,18 @@ import (
 	"time"
 
 	"jmpeax.com/sec/monica/internal/logging"
+	"jmpeax.com/sec/monica/internal/version"
 	"jmpeax.com/sec/monica/pkg/request"
 )
 
 const (
 	// DefaultTimeout bounds a whole request, including reading the body.
 	DefaultTimeout = 30 * time.Second
-	// DefaultUserAgent is sent when the request sets no User-Agent.
-	DefaultUserAgent = "monica/0.1.0"
 )
+
+// DefaultUserAgent is sent when the request sets no User-Agent
+// ("monica/<version>").
+var DefaultUserAgent = version.UserAgent()
 
 // Client sends parsed requests. It wraps one *http.Client so connections are
 // reused across requests.

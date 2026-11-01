@@ -8,6 +8,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
+	"jmpeax.com/sec/monica/internal/version"
 )
 
 // Process exit codes.
@@ -32,7 +33,7 @@ var (
 		Use:           "monica",
 		Short:         "Monica is a CLI tool to manage Network Requests",
 		Long:          `Monica is a CLI tool to manage Network Requests like http, grpc, etc.`,
-		Version:       "0.1.0",
+		Version:       version.Get(),
 		SilenceErrors: true, // Execute prints errors itself
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
