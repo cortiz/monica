@@ -1,0 +1,66 @@
+site_name: Monica
+site_description: Run, test and load-test HTTP requests written as plain-text .mon files.
+site_url: https://cortiz.github.io/monica/
+repo_url: https://github.com/cortiz/monica
+repo_name: cortiz/monica
+edit_uri: edit/main/docs/
+docs_dir: docs
+strict: true
+
+exclude_docs: |
+  claude-code.md
+  requirements.txt
+  screenshots-tmp/
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle: { icon: material/weather-night, name: Dark mode }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle: { icon: material/weather-sunny, name: Light mode }
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc: { permalink: true }
+  - pymdownx.highlight: { anchor_linenums: true }
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.details
+  - pymdownx.tabbed: { alternate_style: true }
+
+validation:
+  links:
+    anchors: warn
+    unrecognized_links: warn
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Install: install.md
+      - Quick start: quick-start.md
+  - Guide:
+      - Running requests: usage.md
+      - .mon file format: format.md
+      - Configuration: configuration.md
+      - Scripting & tests: scripting.md
+      - Load testing: load-testing.md
+      - Terminal UI: tui.md
+      - Importing: importing.md
+  - Project:
+      - Examples: https://github.com/cortiz/monica/tree/main/examples
+      - Roadmap: roadmap.md

@@ -1,0 +1,6 @@
+# @name login
+POST https://example.test/login
+
+> {%
+  vars.set("token", res.json().token);
+%}

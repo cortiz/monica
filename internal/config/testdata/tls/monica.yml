@@ -1,0 +1,29 @@
+version: 1
+defaults:
+  tls:
+    caCert: certs/ca.pem
+  proxy: http://proxy.internal:3128
+envs:
+  mtls:
+    tls:
+      clientCert: certs/${CLIENT}.pem
+      clientKey: certs/${CLIENT}-key.pem
+  absolute:
+    tls:
+      caCert: /etc/ssl/corp-ca.pem
+  direct:
+    proxy: none
+  empty:
+    proxy: ""
+  auth:
+    proxy: http://monica:${PROXY_PASS}@proxy.internal:3128
+  socks:
+    proxy: socks5://127.0.0.1:1080
+  local:
+    tls:
+      clientCert: team.pem
+      clientKey: team-key.pem
+  nokey:
+    tls:
+      clientCert: ${CERT}
+      clientKey: ${KEY}

@@ -1,0 +1,2 @@
+# @name use
+GET https://example.test/{{fromPm}}/{{fromPmColl}}/{{fromBru}}/{{fromBruEnv}}/{{fromClient}}/{{fromRequest}}

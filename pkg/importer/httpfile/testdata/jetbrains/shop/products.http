@@ -1,0 +1,73 @@
+### List products
+// @name listProducts
+GET {{baseUrl}}/{{apiVersion}}/products
+    ?limit=2
+    &currency={{shop.currency}}
+Authorization: Bearer {{token}}
+X-Api-Key: {{apiKey}}
+
+> ./checks/products.js
+
+### Create order
+< {%
+    request.variables.set("ref", "r-" + Date.now());
+%}
+POST {{baseUrl}}/orders HTTP/1.1
+Authorization: Bearer {{token}}
+Content-Type: application/json
+X-Ref: {{ref}}
+
+< ./payloads/order.json
+
+> {%
+    client.test("created", function () {
+        client.assert(response.status === 201, "status " + response.status);
+        client.assert(response.body.ref === request.variables.get("ref"), "ref echoed");
+        client.assert(response.headers.valueOf("location") === "/orders/1", "location");
+        client.assert(response.headers.valuesOf("X-Tag").length === 2, "tags");
+    });
+    client.global.set("orderId", response.body.id);
+%}
+
+### Upload invoice
+POST {{baseUrl}}/orders/{{orderId}}/invoice
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="note"
+
+paid
+--WebAppBoundary
+Content-Disposition: form-data; name="file"; filename="invoice.txt"
+Content-Type: text/plain
+
+< ./payloads/invoice.txt
+--WebAppBoundary--
+
+> {%
+    client.test("uploaded", () => client.assert(response.body.size === 7, "size"));
+    client.test("globals", function () {
+        client.assert(!client.global.isEmpty(), "globals set");
+        client.assert(client.global.get("orderId") === "1", "orderId");
+        client.assert(client.global.get("missing") === null, "missing is null");
+    });
+%}
+
+### Dynamic values
+# @timeout 5
+# @no-redirect
+GET {{baseUrl}}/dynamic?id={{$random.uuid}}
+X-Uuid: {{$uuid}}
+X-Ts: {{$timestamp}}
+X-Iso: {{$isoTimestamp}}
+X-Int: {{$random.integer(1, 10)}}
+X-Hex: {{$random.hexadecimal(8)}}
+
+> {%
+    client.test("dynamic values accepted", () => client.assert(response.status === 200, response.body));
+%}
+>> ./out/dynamic.json
+
+### Live updates
+WEBSOCKET ws://localhost:1/updates

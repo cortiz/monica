@@ -1,0 +1,7 @@
+GET https://example.test/
+
+> {%
+  test("status", () => {
+    expect(res.status).toBe(200;
+  });
+%}

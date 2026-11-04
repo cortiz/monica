@@ -1,0 +1,13 @@
+version: 1
+defaults:
+  headers:
+    X-Api-Version: "{{apiVersion}}"
+  vars:
+    baseUrl: https://example.test
+    apiVersion: v1
+envs:
+  staging:
+    vars:
+      apiVersion: v2
+scripts:
+  paths: [./lib]

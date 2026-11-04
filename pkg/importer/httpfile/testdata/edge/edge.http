@@ -1,0 +1,67 @@
+// A file of edge cases for the converter.
+@host = example.com
+@token = abc
+
+# A URL without a method, title, version or scheme
+example.com/plain
+
+### Relative URL with a Host header
+// @no-cookie-jar
+# @connection-timeout 2 m
+# @prompt otp One-time password
+# @note
+GET /v2/items HTTP/2
+Host: {{host}}:443
+X-Otp: {{otp}}
+X-Token: {{token}}
+# a comment among the headers
+
+### GraphQL
+GRAPHQL https://{{host}}/graphql
+Authorization: Bearer {{token}}
+
+query Items($n: Int) {
+  items(first: $n) { id }
+}
+
+{"n": {{count}}}
+
+### GraphQL, VS Code style
+POST https://{{host}}/graphql
+X-Request-Type: GraphQL
+
+{ me { id } }
+
+### Script features
+# @name scripted
+# @timeout 1500 ms
+< ./pre.js
+POST https://{{host}}/form
+Content-Type: application/x-www-form-urlencoded
+
+a=1&b={{$random.alphabetic(4)}}
+
+> {%
+    import { check } from "./lib/util.js";
+    const _ = require("lodash");
+    if (response.status !== 200) client.exit();
+    check(response);
+%}
+> {% client.log(crypto.sha256().updateWithText("x").digest().toHex()); %}
+>>! ./out.txt
+
+### Unknown things
+# @http-version 1.1
+GET https://{{host}}/x?when={{$random.address.city}}&env={{$processEnv %envVar}}&who={{nobody.response.body.$.id}}&x={{scripted.response.body./a/b}}
+Content-Type: text/plain
+
+<@ ./body.txt
+
+### gRPC
+GRPC localhost:9090/shop.Products/List
+
+### Hand-written body includes outside the folder
+POST https://{{host}}/upload
+Content-Type: application/json
+
+< ../outside.json
