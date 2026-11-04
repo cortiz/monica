@@ -54,6 +54,8 @@ archives:
     files:
       - Readme.md
       - LICENSE.md
+      - docs/*.md
+      - docs/images/**/*
       - examples/**/*
 
 checksum:

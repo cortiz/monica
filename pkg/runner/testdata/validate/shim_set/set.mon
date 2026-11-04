@@ -1,0 +1,16 @@
+# @name fromPostman
+POST https://example.test/a
+
+> {% pm.environment.set("fromPm", "1"); pm.collectionVariables.set('fromPmColl', "1"); %}
+
+###
+# @name fromBruno
+POST https://example.test/b
+
+> {% bru.setVar("fromBru", "1"); bru.setEnvVar(`fromBruEnv`, "1"); %}
+
+###
+# @name fromHttp
+POST https://example.test/c
+
+> {% client.global.set("fromClient", "1"); request.variables.set("fromRequest", "1"); %}

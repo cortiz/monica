@@ -20,6 +20,7 @@ var (
 	tuiConfig    string
 	tuiInsecure  bool
 	tuiNoCookies bool
+	tuiTLS       tlsFlags
 
 	tuiCmd = &cobra.Command{
 		Use:   "tui",
@@ -41,6 +42,7 @@ func init() {
 	f.StringArrayVar(&tuiVarFlags, "var", nil, "set a variable, name=value (repeatable; overrides monica.yml)")
 	f.StringVarP(&tuiConfig, "config", "c", "", "config file to use instead of the nearest monica.yml")
 	f.BoolVarP(&tuiInsecure, "insecure", "k", false, "skip TLS certificate verification")
+	tuiTLS.register(tuiCmd)
 	f.BoolVar(&tuiNoCookies, "no-cookies", false, "don't keep cookies between requests")
 	rootCmd.AddCommand(tuiCmd)
 }
@@ -65,6 +67,9 @@ func runTUI(cmd *cobra.Command, _ []string) error {
 		}
 	}
 	runOpts := runner.Opts{Env: env, Vars: vars, ConfigPath: tuiConfig, Insecure: tuiInsecure}
+	if err := tuiTLS.apply(&runOpts); err != nil {
+		return &exitError{code: ExitUsage, err: err}
+	}
 	sess, err := tui.NewSession(tui.SessionOptions{
 		Run:        runOpts,
 		NoCookies:  tuiNoCookies,

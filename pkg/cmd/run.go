@@ -31,6 +31,7 @@ var (
 	dataPath       string
 	insecure       bool
 	noCookies      bool
+	runTLS         tlsFlags
 	run            = &cobra.Command{
 		Use:   "run",
 		Short: "Runs all mon files",
@@ -53,6 +54,9 @@ var (
 				}
 			}
 			opts := &runner.Opts{Env: env, Vars: vars, ConfigPath: configPath, Bail: bail, Filters: filters, Quiet: quiet, Insecure: insecure}
+			if err := runTLS.apply(opts); err != nil {
+				return &exitError{code: ExitUsage, err: err}
+			}
 			if !noCookies {
 				// One jar for the whole run: cookies set by a response are
 				// sent on later requests to matching hosts, across files.
@@ -94,6 +98,7 @@ func init() {
 	run.Flags().StringArrayVar(&filters, "filter", nil, "only run requests whose @name, ### title or \"METHOD URL\" matches this glob (repeatable)")
 	run.Flags().BoolVarP(&quiet, "quiet", "q", false, "hide response headers and bodies")
 	run.Flags().BoolVarP(&insecure, "insecure", "k", false, "skip TLS certificate verification (like insecureSkipVerify in monica.yml)")
+	runTLS.register(run)
 	run.Flags().BoolVar(&noCookies, "no-cookies", false, "don't keep cookies that responses set (by default they are sent on later requests)")
 	run.Flags().StringVar(&dataPath, "data", "", "run everything once per row of this CSV or JSON file, with the row's values as variables")
 }
@@ -132,6 +137,24 @@ func newReporter(name, outPath string, opts *runner.Opts, stdout io.Writer) (rep
 		return console(f), f.Close, nil
 	}
 	return report.Multi(console(stdout), machine(f)), f.Close, nil
+}
+
+// tlsFlags are --cert, --key, --cacert and --proxy, shared by run, load
+// and tui; they win over tls: and proxy: in monica.yml.
+type tlsFlags struct{ cert, key, caCert, proxy string }
+
+func (t *tlsFlags) register(c *cobra.Command) {
+	f := c.Flags()
+	f.StringVar(&t.cert, "cert", "", "client certificate (PEM) for mutual TLS; needs --key (overrides tls.clientCert)")
+	f.StringVar(&t.key, "key", "", "private key (PEM) of --cert (overrides tls.clientKey)")
+	f.StringVar(&t.caCert, "cacert", "", "extra CA certificates (PEM) to trust besides the system ones (overrides tls.caCert)")
+	f.StringVar(&t.proxy, "proxy", "", "proxy URL (http, https or socks5), or \"none\" to ignore HTTP(S)_PROXY (overrides proxy)")
+}
+
+// apply copies the flags into opts and checks them (reading the files).
+func (t *tlsFlags) apply(opts *runner.Opts) error {
+	opts.ClientCert, opts.ClientKey, opts.CACert, opts.Proxy = t.cert, t.key, t.caCert, t.proxy
+	return opts.CheckTransport()
 }
 
 var varNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*$`)
